@@ -85,8 +85,8 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
               const by = st && st.by !== 'import' ? people.find((p) => p.id === st.by) : undefined
               return (
                 <div key={s.id} className="flex items-center gap-3 px-2">
-                  <span className="w-24 shrink-0 text-[13px]">{s.label}</span>
-                  <div className="flex rounded-lg border border-line bg-bg p-0.5">
+                  <span className="w-[84px] shrink-0 truncate text-[13px]">{s.label}</span>
+                  <div className="flex shrink-0 rounded-lg border border-line bg-bg p-0.5">
                     {MARKS.filter((m) => !template || m.id === null || m.id === 'na').map((m) => {
                       const on = (st?.s ?? null) === m.id
                       return (
@@ -94,7 +94,7 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
                           key={String(m.id)}
                           onClick={() => op([{ type: 'item.step', itemId: item.id, stepId: s.id, mark: m.id }])}
                           className={cx(
-                            'press h-6 rounded-md px-2 text-[12px]',
+                            'press h-6 whitespace-nowrap rounded-md px-2 text-[12px]',
                             on
                               ? m.id === 'done'
                                 ? 'bg-done font-medium text-white'
