@@ -45,7 +45,7 @@
   "productName": "Modelart Tracker",
   "repository": {
     "type": "git",
-    "url": "https://github.com/diets89/modelart-tracker.git"
+    "url": "https://github.com/diets89/Modelart-Project-Tracker.git"
   },
   "build": {
     "appId": "za.co.modelart.tracker",
@@ -80,7 +80,7 @@
       {
         "provider": "github",
         "owner": "diets89",
-        "repo": "modelart-tracker",
+        "repo": "Modelart-Project-Tracker",
         "releaseType": "release"
       }
     ]
