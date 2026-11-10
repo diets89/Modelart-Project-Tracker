@@ -1,0 +1,165 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Design tokens. One accent: the Modelart red. "Done" green is a status colour,
+   kept because the team already reads green as finished. */
+:root {
+  --bg: #f7f7f8;
+  --panel: #ffffff;
+  --sunken: #f1f1f3;
+  --hover: #ececef;
+  --line: #e4e4e7;
+  --line-strong: #d0d0d6;
+  --text: #18181b;
+  --muted: #63636c;
+  --faint: #9a9aa3;
+  --accent: #d72a33;
+  --accent-ink: #ffffff;
+  --accent-soft: #fbe9ea;
+  --done: #2f8f46;
+  --done-soft: #e3f2e6;
+  --wait: #a35f0a;
+  --wait-soft: #fbf0dc;
+  --hold: #52525b;
+  --hold-soft: #ececef;
+  --shadow: 0 1px 2px rgb(24 24 27 / 0.05), 0 8px 24px -8px rgb(24 24 27 / 0.12);
+  color-scheme: light;
+}
+.dark {
+  --bg: #121214;
+  --panel: #19191c;
+  --sunken: #1f1f23;
+  --hover: #26262b;
+  --line: #2a2a30;
+  --line-strong: #3a3a42;
+  --text: #f2f2f4;
+  --muted: #a3a3ad;
+  --faint: #6f6f78;
+  --accent: #f0464f;
+  --accent-ink: #ffffff;
+  --accent-soft: #3a1c1f;
+  --done: #4cb365;
+  --done-soft: #1b3122;
+  --wait: #e3a245;
+  --wait-soft: #35270f;
+  --hold: #b4b4bd;
+  --hold-soft: #2a2a30;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -8px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-sunken: var(--sunken);
+  --color-hover: var(--hover);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-done: var(--done);
+  --color-done-soft: var(--done-soft);
+  --color-wait: var(--wait);
+  --color-wait-soft: var(--wait-soft);
+  --color-hold: var(--hold);
+  --color-hold-soft: var(--hold-soft);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+input,
+textarea,
+select {
+  user-select: text;
+}
+::selection {
+  background: var(--accent-soft);
+}
+
+.drag {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 6px;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* step cell "started": half filled */
+.step-started {
+  background: linear-gradient(135deg, var(--done) 0 50%, var(--done-soft) 50% 100%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .press {
+    transition:
+      transform 0.12s cubic-bezier(0.16, 1, 0.3, 1),
+      background-color 0.15s,
+      border-color 0.15s,
+      color 0.15s;
+  }
+  .press:active {
+    transform: scale(0.94);
+  }
+  .slide-in {
+    animation: slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .fade-in {
+    animation: fade-in 0.18s ease-out;
+  }
+  .pop-in {
+    animation: pop-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+@keyframes slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    transform: translateY(6px) scale(0.985);
+    opacity: 0;
+  }
+}
