@@ -1,3 +1,5 @@
+import type { Project } from './types'
+
 // Timesheets: one file per person per week, made of 30-minute slots, like the Excel sheets.
 // Kept apart from project files so time entry never touches project tracking.
 
@@ -41,8 +43,12 @@ export interface Cell {
   a: string
   /** Project id (project work only) */
   p?: string
-  /** Item id */
+  /** Group id (e.g. Topography). Time is logged per group. */
+  g?: string
+  /** Item id: only on entries from before time was logged per group */
   i?: string
+  /** Job id, for a job number with no tracker project */
+  j?: string
   /** Who captured it, when not the person themself */
   by?: string
 }
@@ -128,4 +134,45 @@ export function dayHours(t: Timesheet | undefined, day: number): number {
   let n = 0
   for (const k of Object.keys(t.cells)) if (k.startsWith(day + ':')) n++
   return hours(n)
+}
+
+// ---------- groups ----------
+/** The group an entry is for. Older entries name an item, so use that item's group. */
+export function cellGroup(p: Project | undefined, c: Cell): string | undefined {
+  if (c.g) return c.g
+  if (!p || !c.i) return undefined
+  for (const s of p.sections) for (const g of s.groups) if (g.items.some((i) => i.id === c.i)) return g.id
+  return undefined
+}
+
+export function groupOf(p: Project | undefined, groupId: string | undefined): { name: string; section: string } | undefined {
+  if (!p || !groupId) return undefined
+  for (const s of p.sections) for (const g of s.groups) if (g.id === groupId) return { name: g.name, section: s.name }
+  return undefined
+}
+
+export function groupOfItem(p: Project, itemId: string): string | undefined {
+  for (const s of p.sections) for (const g of s.groups) if (g.items.some((i) => i.id === itemId)) return g.id
+  return undefined
+}
+
+// ---------- streaks ----------
+/** Hours that count as a filled-in day. */
+export const FULL_DAY = 7
+
+/** Weekdays in a row with a full day logged. Today only counts once it is filled in. */
+export function streak(sheets: Record<string, Timesheet>, person: string, now = new Date()): number {
+  const d = new Date(now)
+  d.setHours(0, 0, 0, 0)
+  let n = 0
+  for (let k = 0; k < 400; k++) {
+    const day = todayIndex(d)
+    const h = dayHours(sheets[person + '/' + weekOf(d)], day)
+    if (day < 5) {
+      if (h >= FULL_DAY) n++
+      else if (k > 0) break
+    }
+    d.setDate(d.getDate() - 1)
+  }
+  return n
 }

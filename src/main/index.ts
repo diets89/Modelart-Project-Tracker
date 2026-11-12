@@ -6,7 +6,7 @@ import { Storage } from './storage'
 import { exportXlsx, exportTimesheets } from './exporter'
 import { SLOTS, todayIndex, weekOf, type Cell, type Timesheet } from '../shared/timesheet'
 import type { Op } from '../shared/ops'
-import type { Collection, Person, Project } from '../shared/types'
+import type { Collection, Job, Person, Project } from '../shared/types'
 
 interface Config {
   dataDir: string
@@ -17,11 +17,13 @@ interface Config {
   /** End-of-day reminder to fill in the timesheet. */
   reminders: boolean
   reminderTime: string // "16:30"
+  celebrations: boolean
+  sounds: boolean
 }
 
 const DEFAULT_DIR = 'Z:\\Data\\Shared Files\\Modelart Tracker'
 const configPath = (): string => path.join(app.getPath('userData'), 'config.json')
-let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true, reminders: true, reminderTime: '16:30' }
+let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true, reminders: true, reminderTime: '16:30', celebrations: true, sounds: false }
 let storage: Storage | null = null
 let win: BrowserWindow | null = null
 let online = true
@@ -103,6 +105,11 @@ async function poll(): Promise<void> {
         /* mid-write */
       }
     }
+  }
+  const jm = await storage.jobsMtime()
+  if (known['jobs'] !== jm) {
+    known['jobs'] = jm
+    send('jobs', await storage.jobs())
   }
   const pm = await storage.peopleMtime()
   if (known['people'] !== pm) {
@@ -192,20 +199,22 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('data:load', async () => {
-    if (!storage) return { online: false, projects: [], templates: [], people: [] }
+    if (!storage) return { online: false, projects: [], templates: [], people: [], jobs: [] }
     online = await storage.online()
-    if (!online) return { online, projects: [], templates: [], people: [] }
+    if (!online) return { online, projects: [], templates: [], people: [], jobs: [] }
     await storage.ensure()
     const projects = await storage.list('projects')
     const templates = await storage.list('templates')
     for (const { project, mtime } of projects) known['projects/' + project.id] = mtime
     for (const { project, mtime } of templates) known['templates/' + project.id] = mtime
     known['people'] = await storage.peopleMtime()
+    known['jobs'] = await storage.jobsMtime()
     return {
       online,
       projects: projects.map((x) => x.project),
       templates: templates.map((x) => x.project),
-      people: await storage.people()
+      people: await storage.people(),
+      jobs: await storage.jobs()
     }
   })
   ipcMain.handle('data:apply', async (_e, c: Collection, id: string, ops: Op[]) => {
@@ -262,11 +271,34 @@ function registerIpc(): void {
       filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
     })
     if (r.canceled || !r.filePath) return null
-    await exportTimesheets(week, sheets, people, projects, r.filePath)
+    await exportTimesheets(week, sheets, people, projects, await s.jobs(), r.filePath)
     shell.showItemInFolder(r.filePath)
     return r.filePath
   })
   ipcMain.handle('data:activity', (_e, projectId: string) => storage?.activity(projectId) ?? [])
+  // Profile pictures: images in <data folder>/avatars, shared by every PC.
+  ipcMain.handle('avatars:list', async () => {
+    if (!storage || !online) return {}
+    const dir = path.join(storage.root, 'avatars')
+    const out: Record<string, string> = {}
+    const types: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
+    try {
+      for (const n of (await fs.readdir(dir)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))) {
+        const type = types[path.extname(n).toLowerCase()]
+        if (!type) continue
+        const buf = await fs.readFile(path.join(dir, n))
+        if (buf.length < 2_000_000) out[n] = `data:${type};base64,${buf.toString('base64')}`
+      }
+    } catch {
+      /* no avatars yet */
+    }
+    return out
+  })
+  ipcMain.handle('jobs:save', async (_e, j: Job) => {
+    const list = await requireStorage().saveJob(j, config.userId)
+    known['jobs'] = await storage!.jobsMtime()
+    return list
+  })
   ipcMain.handle('people:save', async (_e, p: Person) => {
     const list = await requireStorage().savePerson(p, config.userId || p.id)
     known['people'] = await storage!.peopleMtime()

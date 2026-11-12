@@ -43,6 +43,16 @@ describe('timesheet storage', () => {
     expect(Object.keys(await a.sheetMtimes())).toEqual(['josias/2026-W46'])
   })
 
+  it('keeps job numbers from two PCs and refuses duplicates', async () => {
+    const a = new Storage(root)
+    const b = new Storage(root)
+    await Promise.all([a.saveJob({ id: 'j1', code: 'P34/26', name: '' }, 'diets'), b.saveJob({ id: 'j2', code: 'P35/26', name: 'Hotel' }, 'garth')])
+    expect((await a.jobs()).map((j) => j.code).sort()).toEqual(['P34/26', 'P35/26'])
+    await expect(a.saveJob({ id: 'j3', code: 'p34/26', name: '' }, 'diets')).rejects.toThrow(/already/)
+    await a.saveJob({ id: 'j1', code: 'P34/26', name: 'Renamed', archived: true }, 'diets')
+    expect((await b.jobs()).find((j) => j.id === 'j1')).toMatchObject({ name: 'Renamed', archived: true })
+  })
+
   it('rejects odd ids', async () => {
     const s = new Storage(root)
     await expect(s.applySheet('../x', '2026-W46', {}, 'diets')).rejects.toThrow()

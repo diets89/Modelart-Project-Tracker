@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CaretLeft, CaretRight, Eraser, FileXls, MagnifyingGlass } from '@phosphor-icons/react'
-import type { Item, Project } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
+import { CaretLeft, CaretRight, CheckCircle, Eraser, FileXls } from '@phosphor-icons/react'
+import type { Job, Project } from '@shared/types'
+import { uid } from '@shared/factory'
 import {
   ACTIVITIES,
   activity,
+  cellGroup,
+  groupOf,
   addWeeks,
   cellKey,
   DAYS,
@@ -11,6 +14,8 @@ import {
   dayHours,
   emptySheet,
   fmtHours,
+  FULL_DAY,
+  streak,
   SLOTS,
   slotTime,
   todayIndex,
@@ -21,7 +26,7 @@ import {
 } from '@shared/timesheet'
 import { api, errText } from '../api'
 import { useStore } from '../store'
-import { Avatar, Button, IconButton, cx } from '../ui'
+import { Avatar, Button, IconButton, StreakChip, cx } from '../ui'
 
 const ROW = 22 // px per 30 minutes
 const PALETTE = ['#2563eb', '#0d9488', '#9333ea', '#c2410c', '#0891b2', '#be185d', '#a16207', '#4f46e5']
@@ -37,25 +42,22 @@ const norm = (s: Sel): Sel => ({ d0: Math.min(s.d0, s.d1), d1: Math.max(s.d0, s.
 const same = (a?: Cell, b?: Cell): boolean => !!a && !!b && a.a === b.a && a.p === b.p && a.i === b.i
 const fmtDay = (d: Date): string => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
-function findItem(p: Project | undefined, id?: string): { item: Item; where: string } | undefined {
-  if (!p || !id) return
-  for (const s of p.sections)
-    for (const g of s.groups) {
-      const item = g.items.find((i) => i.id === id)
-      if (item) return { item, where: g.name === s.name ? s.name : `${s.name} / ${g.name}` }
-    }
-}
+/** "p:<project id>" or "j:<job id>": what the time was for. */
+const targetKey = (c: Cell): string => (c.p ? 'p:' + c.p : c.j ? 'j:' + c.j : '')
 
 export function TimesheetPage() {
   const people = useStore((s) => s.people)
   const myId = useStore((s) => s.config?.userId ?? '')
   const projectsMap = useStore((s) => s.docs.projects)
+  const jobs = useStore((s) => s.jobs)
   const person = useStore((s) => s.sheetPerson) || myId
   const week = useStore((s) => s.sheetWeek)
   const setView = useStore((s) => s.setSheetView)
   const saveCells = useStore((s) => s.saveCells)
   const prefill = useStore((s) => s.timePrefill)
   const toast = useStore((s) => s.toast)
+  const fun = useStore((s) => s.fun)
+  const myStreak = useStore((s) => streak(s.sheets, myId))
   const sheet: Timesheet = useStore((s) => s.sheets[person + '/' + week]) ?? emptySheet(person, week)
   const who = people.find((p) => p.id === person)
   const thisWeek = weekOf(new Date())
@@ -65,9 +67,9 @@ export function TimesheetPage() {
   const [draft, setDraft] = useState<Cell>(() => {
     if (prefill) return prefill
     const n: Record<string, number> = {}
-    for (const c of Object.values(sheet.cells)) if (c.p) n[c.p] = (n[c.p] ?? 0) + 1
-    const p = Object.keys(n).sort((a, b) => n[b] - n[a])[0]
-    return { a: 'CM', p }
+    for (const c of Object.values(sheet.cells)) if (targetKey(c)) n[targetKey(c)] = (n[targetKey(c)] ?? 0) + 1
+    const top = Object.keys(n).sort((a, b) => n[b] - n[a])[0] ?? ''
+    return { a: 'CM', ...(top.startsWith('p:') ? { p: top.slice(2) } : top.startsWith('j:') ? { j: top.slice(2) } : {}) }
   })
   const [weekend, setWeekend] = useState(false)
   const drag = useRef<{ d: number; s: number; moved: boolean } | null>(null)
@@ -79,9 +81,9 @@ export function TimesheetPage() {
 
   const hasWeekend = Object.keys(sheet.cells).some((k) => k.startsWith('5:') || k.startsWith('6:'))
   const days = DAYS.map((_, d) => d).filter((d) => d < 5 || weekend || hasWeekend)
-  const colorOf = (projectId?: string): string => {
-    const ids = Object.keys(projectsMap).sort()
-    return PALETTE[Math.max(0, ids.indexOf(projectId ?? '')) % PALETTE.length]
+  const colorOf = (key: string): string => {
+    const ids = [...Object.keys(projectsMap).sort().map((id) => 'p:' + id), ...jobs.map((j) => 'j:' + j.id)]
+    return PALETTE[Math.max(0, ids.indexOf(key)) % PALETTE.length]
   }
 
   // ---------- writing ----------
@@ -94,13 +96,27 @@ export function TimesheetPage() {
     if (!sel) return
     const act = activity(draft.a)
     if (!act) return
-    if (!act.general && !draft.p) {
-      toast('Pick the project this time was for.', 'error')
+    if (!act.general && !draft.p && !draft.j) {
+      toast('Pick the project or job number this time was for.', 'error')
       return
     }
-    const cell: Cell = act.general ? { a: draft.a } : { a: draft.a, p: draft.p, ...(draft.i ? { i: draft.i } : {}) }
+    const cell: Cell = act.general
+      ? { a: draft.a }
+      : draft.p
+        ? { a: draft.a, p: draft.p, ...(draft.g ? { g: draft.g } : {}) }
+        : { a: draft.a, j: draft.j }
     if (person !== myId) cell.by = myId
-    saveCells(person, week, Object.fromEntries(cellsIn(sel).map((k) => [k, cell])))
+    const keys = cellsIn(sel)
+    const fullBefore = new Set(days.filter((d) => dayHours(sheet, d) >= FULL_DAY))
+    saveCells(person, week, Object.fromEntries(keys.map((k) => [k, cell])))
+    // A day just reached a full day's hours: a little reward, and the streak.
+    const after = useStore.getState().sheets[person + '/' + week]
+    const nowFull = days.filter((d) => !fullBefore.has(d) && dayHours(after, d) >= FULL_DAY)
+    if (nowFull.length && person === myId) {
+      fun('day')
+      const n = streak(useStore.getState().sheets, myId)
+      toast(n >= 2 ? `${DAYS[nowFull[0]]} is filled in. ${n} days in a row!` : `${DAYS[nowFull[0]]} is filled in. Nice one.`)
+    }
     // Move on to the slot after the selection, ready for the next entry.
     if (sel.d0 === sel.d1 && sel.s1 + 1 < SLOTS) setSel({ d0: sel.d0, d1: sel.d0, s0: sel.s1 + 1, s1: sel.s1 + 1 })
     else setSel(null)
@@ -160,7 +176,7 @@ export function TimesheetPage() {
       while (s0 > 0 && same(sheet.cells[cellKey(g.d, s0 - 1)], c)) s0--
       while (s1 < SLOTS - 1 && same(sheet.cells[cellKey(g.d, s1 + 1)], c)) s1++
       setSel({ d0: g.d, d1: g.d, s0, s1 })
-      setDraft({ a: c.a, p: c.p, i: c.i })
+      setDraft({ a: c.a, p: c.p, g: cellGroup(c.p ? projectsMap[c.p] : undefined, c), j: c.j })
     }
     window.addEventListener('mouseup', up)
     return () => window.removeEventListener('mouseup', up)
@@ -199,6 +215,11 @@ export function TimesheetPage() {
             <h1 className="text-[22px] font-semibold tracking-tight">{person === myId ? 'My timesheet' : `${who?.name ?? ''}'s timesheet`}</h1>
             <p className="text-muted">
               Week {weekNo(week)}, {fmtDay(dayDate(week, 0))} to {fmtDay(dayDate(week, 6))}. <span className="font-mono text-ink">{fmtHours(total)}</span> logged.
+              {person === myId && myStreak >= 1 && (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-wait-soft px-2 py-0.5 align-middle text-[12px] text-wait">
+                  <StreakChip days={myStreak} /> day{myStreak === 1 ? '' : 's'} in a row
+                </span>
+              )}
             </p>
           </div>
           <select
@@ -254,7 +275,10 @@ export function TimesheetPage() {
                   <div className={cx('text-[12.5px] font-semibold', d === today && 'text-accent')}>
                     {DAYS[d]} {dayDate(week, d).getDate()}
                   </div>
-                  <div className="font-mono text-[11.5px] text-muted">{dayHours(sheet, d) ? fmtHours(dayHours(sheet, d)) : '-'}</div>
+                  <div className="flex items-center gap-1 font-mono text-[11.5px] text-muted">
+                    {dayHours(sheet, d) ? fmtHours(dayHours(sheet, d)) : '-'}
+                    {dayHours(sheet, d) >= FULL_DAY && <CheckCircle key={dayHours(sheet, d) >= FULL_DAY ? 'full' : 'no'} size={13} weight="fill" className="pop-in text-done" aria-label="Full day" />}
+                  </div>
                 </div>
               ))}
             </div>
@@ -280,14 +304,15 @@ export function TimesheetPage() {
                   {blocks(d).map((b) => {
                     const act = activity(b.c.a)
                     const p = b.c.p ? projectsMap[b.c.p] : undefined
-                    const it = findItem(p, b.c.i)
-                    const color = colorOf(b.c.p)
+                    const grp = groupOf(p, cellGroup(p, b.c))
+                    const job = b.c.j ? jobs.find((x) => x.id === b.c.j) : undefined
+                    const color = colorOf(targetKey(b.c))
                     const rows = b.s1 - b.s0 + 1
                     const capt = b.c.by ? people.find((x) => x.id === b.c.by)?.name : undefined
                     return (
                       <div
                         key={b.s0}
-                        title={[`${slotTime(b.s0)}-${slotTime(b.s1 + 1)}`, `${b.c.a} ${act?.label ?? ''}`, p && `${p.code} ${p.name}`, it?.item.name, capt && `Captured by ${capt}`].filter(Boolean).join('\n')}
+                        title={[`${slotTime(b.s0)}-${slotTime(b.s1 + 1)}`, `${b.c.a} ${act?.label ?? ''}`, p && `${p.code} ${p.name}`, job && `${job.code} ${job.name}`, grp && (grp.name === grp.section ? grp.name : `${grp.section} / ${grp.name}`), capt && `Captured by ${capt}`].filter(Boolean).join('\n')}
                         className={cx('pointer-events-none absolute inset-x-1 overflow-hidden rounded-md px-1.5 text-[11.5px] leading-[20px]', act?.general ? 'bg-sunken text-muted' : 'text-ink')}
                         style={{
                           top: b.s0 * ROW + 1,
@@ -298,12 +323,13 @@ export function TimesheetPage() {
                         }}
                       >
                         <div className="truncate pl-1">
-                          <b className="font-mono font-semibold">{b.c.a}</b> {act?.general ? act.label : it?.item.name ?? p?.name ?? ''}
+                          <b className="font-mono font-semibold">{b.c.a}</b> {act?.general ? act.label : (grp?.name ?? p?.name ?? (job ? job.name || job.code : ''))}
                         </div>
                         {rows > 1 && (
                           <div className="truncate pl-1 text-muted">
                             {fmtHours(rows / 2)}
-                            {p && !act?.general ? ` · ${p.code || p.name}` : ''}
+                            {!act?.general && p ? ` · ${p.code || p.name}` : ''}
+                            {!act?.general && job ? ` · ${job.code}` : ''}
                           </div>
                         )}
                       </div>
@@ -351,6 +377,10 @@ function Editor({
   const projects = Object.values(useStore((s) => s.docs.projects))
     .filter((p) => p.status !== 'delivered' || p.id === draft.p)
     .sort((a, b) => a.name.localeCompare(b.name))
+  const jobs = useStore((s) => s.jobs)
+    .filter((j) => !j.archived || j.id === draft.j)
+    .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+  const [adding, setAdding] = useState(false)
   const act = activity(draft.a)
   const project = projects.find((p) => p.id === draft.p)
   const n = sel ? (sel.d1 - sel.d0 + 1) * (sel.s1 - sel.s0 + 1) : 0
@@ -393,19 +423,45 @@ function Editor({
           <label className="block space-y-1.5">
             <span className="text-[12px] font-medium text-muted">Project</span>
             <select
-              value={draft.p ?? ''}
-              onChange={(e) => setDraft({ ...draft, p: e.target.value || undefined, i: undefined })}
+              value={adding ? '+add' : draft.p ? 'p:' + draft.p : draft.j ? 'j:' + draft.j : ''}
+              onChange={(e) => {
+                const v = e.target.value
+                if (v === '+add') return setAdding(true)
+                setAdding(false)
+                setDraft({ a: draft.a, ...(v.startsWith('p:') ? { p: v.slice(2) } : v.startsWith('j:') ? { j: v.slice(2) } : {}) })
+              }}
               className="h-9 w-full rounded-lg border border-line bg-panel px-2 text-[13px] outline-none focus:border-accent"
             >
               <option value="">Choose a project</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.code ? `${p.code}  ${p.name}` : p.name}
-                </option>
-              ))}
+              <optgroup label="Projects in the tracker">
+                {projects.map((p) => (
+                  <option key={p.id} value={'p:' + p.id}>
+                    {p.code ? `${p.code}  ${p.name}` : p.name}
+                  </option>
+                ))}
+              </optgroup>
+              {jobs.length > 0 && (
+                <optgroup label="Job numbers, no tracker">
+                  {jobs.map((j) => (
+                    <option key={j.id} value={'j:' + j.id}>
+                      {j.name ? `${j.code}  ${j.name}` : j.code}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <option value="+add">+ Add a job number...</option>
             </select>
           </label>
-          {project && <ItemPicker project={project} value={draft.i} onChange={(i) => setDraft({ ...draft, i })} />}
+          {adding && (
+            <AddJob
+              projects={projects}
+              onDone={(t) => {
+                setAdding(false)
+                if (t) setDraft({ a: draft.a, ...t })
+              }}
+            />
+          )}
+          {project && !adding && <GroupPicker project={project} value={draft.g} onChange={(g) => setDraft({ ...draft, g })} />}
         </>
       )}
 
@@ -418,6 +474,71 @@ function Editor({
         </Button>
       </div>
     </div>
+  )
+}
+
+/** Adds a job number that has no tracker project, so time can be logged against it. */
+function AddJob({ projects, onDone }: { projects: Project[]; onDone: (t?: { p?: string; j?: string }) => void }) {
+  const jobs = useStore((s) => s.jobs)
+  const saveJob = useStore((s) => s.saveJob)
+  const toast = useStore((s) => s.toast)
+  const [code, setCode] = useState('')
+  const [name, setName] = useState('')
+  const norm = (s: string): string => s.replace(/\s+/g, '').toLowerCase()
+
+  const add = async (): Promise<void> => {
+    const c = code.trim().toUpperCase()
+    if (!c) return
+    const tracked = projects.find((p) => p.code && norm(p.code) === norm(c))
+    if (tracked) {
+      toast(`${c} already has a tracker: ${tracked.name}. Picked it for you.`)
+      return onDone({ p: tracked.id })
+    }
+    const known = jobs.find((j) => norm(j.code) === norm(c))
+    if (known) {
+      if (known.archived) await saveJob({ ...known, archived: false })
+      return onDone({ j: known.id })
+    }
+    const job: Job = { id: uid('j'), code: c, name: name.trim() }
+    if (await saveJob(job)) onDone({ j: job.id })
+  }
+
+  return (
+    <form
+      className="space-y-2 rounded-lg border border-line bg-sunken/60 p-3"
+      onSubmit={(e) => {
+        e.preventDefault()
+        add()
+      }}
+    >
+      <div className="text-[12.5px] font-medium">New job number</div>
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="P34/26"
+          aria-label="Job number"
+          className="h-8 w-24 rounded-lg border border-line bg-panel px-2 font-mono text-[13px] outline-none focus:border-accent"
+        />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name (optional)"
+          aria-label="Job name"
+          className="h-8 min-w-0 flex-1 rounded-lg border border-line bg-panel px-2 text-[13px] outline-none focus:border-accent"
+        />
+      </div>
+      <p className="text-[11.5px] text-faint">For jobs without a tracker. Everyone sees it in their list.</p>
+      <div className="flex justify-end gap-2">
+        <Button size="sm" type="button" tone="quiet" onClick={() => onDone()}>
+          Cancel
+        </Button>
+        <Button size="sm" type="submit" tone="primary" disabled={!code.trim()}>
+          Add
+        </Button>
+      </div>
+    </form>
   )
 }
 
@@ -437,102 +558,74 @@ function Chip({ on, title, onClick, children }: { on: boolean; title: string; on
   )
 }
 
-function ItemPicker({ project, value, onChange }: { project: Project; value?: string; onChange: (id: string | undefined) => void }) {
-  const [q, setQ] = useState('')
-  const rows = useMemo(() => {
-    const k = q.trim().toLowerCase()
-    return project.sections.flatMap((s) =>
-      s.groups.flatMap((g) =>
-        g.items
-          .filter((i) => !k || `${i.name} ${g.name} ${s.name}`.toLowerCase().includes(k))
-          .map((i) => ({ i, where: g.name === s.name ? s.name : `${s.name} / ${g.name}` }))
-      )
-    )
-  }, [project, q])
-  const current = findItem(project, value)
-
+function GroupPicker({ project, value, onChange }: { project: Project; value?: string; onChange: (id: string | undefined) => void }) {
   return (
-    <div className="space-y-1.5">
-      <span className="text-[12px] font-medium text-muted">Item</span>
-      {current && (
-        <div className="flex items-center gap-2 rounded-lg border border-accent bg-accent-soft/40 px-2.5 py-1.5 text-[13px]">
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{current.item.name}</span>
-            <span className="block truncate text-[11.5px] text-muted">{current.where}</span>
-          </span>
-          <button onClick={() => onChange(undefined)} className="press text-[12px] text-muted hover:text-ink">
-            Change
-          </button>
-        </div>
-      )}
-      {!current && (
-        <>
-          <div className="relative">
-            <MagnifyingGlass size={14} className="absolute top-1/2 left-2.5 -translate-y-1/2 text-faint" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search items"
-              aria-label="Search items"
-              className="h-8 w-full rounded-lg border border-line bg-panel pr-2 pl-8 text-[13px] outline-none focus:border-accent"
-            />
-          </div>
-          <div className="max-h-[240px] overflow-y-auto rounded-lg border border-line">
-            <button onClick={() => onChange(undefined)} className="block w-full border-b border-line px-2.5 py-1.5 text-left text-[12.5px] text-muted hover:bg-hover">
-              Whole project, no specific item
-            </button>
-            {rows.slice(0, 200).map(({ i, where }) => (
-              <button key={i.id} onClick={() => onChange(i.id)} className="block w-full px-2.5 py-1 text-left hover:bg-hover">
-                <span className="block truncate text-[13px]">{i.name}</span>
-                <span className="block truncate text-[11px] text-faint">{where}</span>
-              </button>
+    <label className="block space-y-1.5">
+      <span className="text-[12px] font-medium text-muted">Part of the model</span>
+      <select
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value || undefined)}
+        className="h-9 w-full rounded-lg border border-line bg-panel px-2 text-[13px] outline-none focus:border-accent"
+      >
+        <option value="">Whole project</option>
+        {project.sections.map((s) => (
+          <optgroup key={s.id} label={s.name}>
+            {s.groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
             ))}
-            {rows.length === 0 && <p className="px-2.5 py-2 text-[12.5px] text-faint">No items match.</p>}
-          </div>
-        </>
-      )}
-    </div>
+          </optgroup>
+        ))}
+      </select>
+    </label>
   )
 }
 
-function Summary({ sheet, colorOf }: { sheet: Timesheet; colorOf: (id?: string) => string }) {
+function Summary({ sheet, colorOf }: { sheet: Timesheet; colorOf: (key: string) => string }) {
   const projectsMap = useStore((s) => s.docs.projects)
+  const jobs = useStore((s) => s.jobs)
   const cells = Object.values(sheet.cells)
   if (!cells.length) return <p className="p-4 text-[12.5px] text-faint">No time this week yet.</p>
 
   const byProject = new Map<string, Map<string, number>>()
   const general = new Map<string, number>()
   for (const c of cells) {
-    if (activity(c.a)?.general || !c.p) {
+    const key = targetKey(c)
+    if (activity(c.a)?.general || !key) {
       general.set(c.a, (general.get(c.a) ?? 0) + 0.5)
       continue
     }
-    const m = byProject.get(c.p) ?? new Map<string, number>()
-    m.set(c.i ?? '', (m.get(c.i ?? '') ?? 0) + 0.5)
-    byProject.set(c.p, m)
+    const m = byProject.get(key) ?? new Map<string, number>()
+    const gid = cellGroup(c.p ? projectsMap[c.p] : undefined, c) ?? ''
+    m.set(gid, (m.get(gid) ?? 0) + 0.5)
+    byProject.set(key, m)
   }
   const sum = (m: Map<string, number>): number => [...m.values()].reduce((a, b) => a + b, 0)
 
   return (
     <div className="space-y-5 p-4">
       <h2 className="text-[14px] font-semibold">This week</h2>
-      {[...byProject.entries()].map(([pid, items]) => {
-        const p = projectsMap[pid]
+      {[...byProject.entries()].map(([key, items]) => {
+        const p = key.startsWith('p:') ? projectsMap[key.slice(2)] : undefined
+        const job = key.startsWith('j:') ? jobs.find((j) => j.id === key.slice(2)) : undefined
+        const name = p?.name ?? (job ? job.name || job.code : 'Removed project')
+        const code = p?.code ?? (job?.name ? job.code : '')
         return (
-          <div key={pid}>
+          <div key={key}>
             <div className="mb-1 flex items-baseline gap-2">
-              <span className="size-2 shrink-0 rounded-full" style={{ background: colorOf(pid) }} />
+              <span className="size-2 shrink-0 rounded-full" style={{ background: colorOf(key) }} />
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                {p?.name ?? 'Removed project'} <span className="font-mono text-[11.5px] font-normal text-faint">{p?.code}</span>
+                {name} <span className="font-mono text-[11.5px] font-normal text-faint">{code}</span>
               </span>
               <span className="font-mono text-[12.5px]">{fmtHours(sum(items))}</span>
             </div>
             <ul className="space-y-0.5 pl-4">
               {[...items.entries()]
                 .sort((a, b) => b[1] - a[1])
-                .map(([iid, h]) => (
-                  <li key={iid} className="flex gap-2 text-[12.5px] text-muted">
-                    <span className="min-w-0 flex-1 truncate">{iid ? findItem(p, iid)?.item.name ?? 'Removed item' : 'Whole project'}</span>
+                .map(([gid, h]) => (
+                  <li key={gid} className="flex gap-2 text-[12.5px] text-muted">
+                    <span className="min-w-0 flex-1 truncate">{gid ? (groupOf(p, gid)?.name ?? 'Removed group') : job ? 'No tracker' : 'Whole project'}</span>
                     <span className="font-mono">{fmtHours(h)}</span>
                   </li>
                 ))}

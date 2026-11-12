@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { CalendarBlank, CubeFocus, Plus } from '@phosphor-icons/react'
-import { allItems, summarize } from '@shared/status'
+import { CalendarBlank, Confetti, CubeFocus, Plus } from '@phosphor-icons/react'
+import { allItems, itemStatus, summarize } from '@shared/status'
+import { dayDate, fmtHours, weekOf, weekStart } from '@shared/timesheet'
 import type { ProjectStatus } from '@shared/types'
 import { useStore } from '../store'
 import { Button, Empty, Progress, cx, fmtDate, fmtWhen } from '../ui'
@@ -34,6 +35,8 @@ export function Projects() {
           New project
         </Button>
       </div>
+
+      <TeamWins />
 
       <div className="mt-6 flex gap-1 border-b border-line">
         {TABS.map((t) => {
@@ -107,6 +110,80 @@ export function Projects() {
         </div>
       )}
       {creating && <NewProject onClose={() => setCreating(false)} />}
+    </div>
+  )
+}
+
+/** What the team got done this week. Team totals only, nobody gets ranked. */
+function TeamWins() {
+  const projects = Object.values(useStore((s) => s.docs.projects))
+  const sheets = useStore((s) => s.sheets)
+  const week = weekOf(new Date())
+  const since = weekStart(week).toISOString()
+
+  let items = 0
+  const groups: { name: string; project: string }[] = []
+  for (const p of projects) {
+    for (const s of p.sections)
+      for (const g of s.groups) {
+        let latest = ''
+        let all = g.items.length > 1
+        for (const i of g.items) {
+          const done = itemStatus(i, p.steps).kind === 'done'
+          const at = Object.values(i.steps).reduce((m, st) => (st.by !== 'import' && st.at > m ? st.at : m), '')
+          if (done && at >= since) items++
+          if (!done) all = false
+          if (at > latest) latest = at
+        }
+        if (all && latest >= since) groups.push({ name: g.name, project: p.name })
+      }
+  }
+  let slots = 0
+  for (const t of Object.values(sheets)) if (t.week === week) slots += Object.keys(t.cells).length
+
+  const fmt = (d: Date): string => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  const quiet = !items && !groups.length && !slots
+  return (
+    <div className="mt-5 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-xl border border-line bg-panel px-5 py-3.5">
+      <div className="flex items-center gap-3">
+        <span className="flex size-9 items-center justify-center rounded-lg bg-done-soft text-done">
+          <Confetti size={19} weight="fill" />
+        </span>
+        <div>
+          <div className="text-[13.5px] font-semibold">This week</div>
+          <div className="text-[12px] text-muted">
+            {fmt(dayDate(week, 0))} to {fmt(dayDate(week, 6))}
+          </div>
+        </div>
+      </div>
+      {quiet ? (
+        <p className="text-[13px] text-muted">A fresh week. The first finished items show up here.</p>
+      ) : (
+        <>
+          <Stat n={String(items)} label={items === 1 ? 'item finished' : 'items finished'} />
+          <Stat n={String(groups.length)} label={groups.length === 1 ? 'group closed off' : 'groups closed off'} />
+          <Stat n={fmtHours(slots / 2)} label="logged by the team" />
+          {groups.length > 0 && (
+            <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+              {groups.slice(0, 6).map((g) => (
+                <span key={g.project + g.name} title={g.project} className="rounded-full bg-done-soft px-2.5 py-0.5 text-[12px] font-medium text-done">
+                  {g.name}
+                </span>
+              ))}
+              {groups.length > 6 && <span className="text-[12px] text-muted">+{groups.length - 6} more</span>}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function Stat({ n, label }: { n: string; label: string }) {
+  return (
+    <div>
+      <div className="font-mono text-[18px] font-semibold tnum">{n}</div>
+      <div className="text-[12px] text-muted">{label}</div>
     </div>
   )
 }

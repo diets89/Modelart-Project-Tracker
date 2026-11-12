@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowsClockwise, Check, CopySimple, FolderOpen, Plus } from '@phosphor-icons/react'
 import type { Person } from '@shared/types'
 import { api, errText, type McpInfo } from '../api'
+import { play } from '../fun'
 import { useStore } from '../store'
 import { Avatar, Button, InlineEdit, TextInput, cx } from '../ui'
 
@@ -46,6 +47,35 @@ export function Settings() {
         </select>
       </Section>
 
+      <AvatarPicker />
+
+      <Section title="Celebrations">
+        <div className="divide-y divide-line rounded-xl border border-line bg-panel">
+          <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+            <span className="flex-1">
+              <span className="block font-medium">Confetti</span>
+              <span className="block text-[12.5px] text-muted">When an item is finished, more when a whole group or model is done, and when you fill in a full day.</span>
+            </span>
+            <input type="checkbox" checked={config.celebrations !== false} onChange={(e) => setConfig({ celebrations: e.target.checked })} className="size-4 accent-[var(--accent)]" />
+          </label>
+          <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+            <span className="flex-1">
+              <span className="block font-medium">Sounds</span>
+              <span className="block text-[12.5px] text-muted">A soft tick on each step and a chime when things are finished.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={!!config.sounds}
+              onChange={(e) => {
+                setConfig({ sounds: e.target.checked })
+                if (e.target.checked) play('item')
+              }}
+              className="size-4 accent-[var(--accent)]"
+            />
+          </label>
+        </div>
+      </Section>
+
       <Section title="Team" text="Everyone who can be assigned to items. Initials and colour show on the board.">
         <div className="divide-y divide-line rounded-xl border border-line bg-panel">
           {people.map((p) => (
@@ -86,6 +116,8 @@ export function Settings() {
           />
         </div>
       </Section>
+
+      <JobsSection />
 
       <AgentSection />
 
@@ -135,6 +167,66 @@ export function Settings() {
         </div>
       </Section>
     </div>
+  )
+}
+
+/** Pick a profile picture from the figures in the data folder's avatars folder. */
+function AvatarPicker() {
+  const config = useStore((s) => s.config)!
+  const people = useStore((s) => s.people)
+  const avatars = useStore((s) => s.avatars)
+  const savePerson = useStore((s) => s.savePerson)
+  const me = people.find((p) => p.id === config.userId)
+  const names = Object.keys(avatars)
+  if (!me) return null
+  return (
+    <Section title="Your picture" text={names.length ? 'Shows next to your name everywhere in the app. Your colour is the background.' : 'Profile pictures are on their way. Once the figures are in the avatars folder on the network drive, you can pick one here.'}>
+      {names.length > 0 && (
+        <div className="flex max-h-[300px] flex-wrap gap-2 overflow-y-auto rounded-xl border border-line bg-panel p-3">
+          <button
+            onClick={() => savePerson({ ...me, avatar: undefined })}
+            aria-pressed={!me.avatar}
+            className={cx('press rounded-full p-0.5', !me.avatar ? 'ring-2 ring-accent' : 'ring-1 ring-line hover:ring-line-strong')}
+            title="Initials"
+          >
+            <Avatar person={{ ...me, avatar: undefined }} size={52} />
+          </button>
+          {names.map((n) => (
+            <button
+              key={n}
+              onClick={() => savePerson({ ...me, avatar: n })}
+              aria-pressed={me.avatar === n}
+              className={cx('press rounded-full p-0.5', me.avatar === n ? 'ring-2 ring-accent' : 'ring-1 ring-line hover:ring-line-strong')}
+              title={n.replace(/\.[a-z]+$/i, '')}
+            >
+              <Avatar person={{ ...me, avatar: n }} size={52} />
+            </button>
+          ))}
+        </div>
+      )}
+    </Section>
+  )
+}
+
+function JobsSection() {
+  const jobs = useStore((s) => s.jobs)
+  const saveJob = useStore((s) => s.saveJob)
+  if (!jobs.length) return null
+  const list = [...jobs].sort((a, b) => Number(!!a.archived) - Number(!!b.archived) || a.code.localeCompare(b.code, undefined, { numeric: true }))
+  return (
+    <Section title="Job numbers without a tracker" text="Added from the timesheet when time goes to a job that isn't tracked here. Hide finished ones to keep the list short.">
+      <div className="divide-y divide-line rounded-xl border border-line bg-panel">
+        {list.map((j) => (
+          <div key={j.id} className={cx('flex items-center gap-3 px-3 py-1.5', j.archived && 'opacity-50')}>
+            <InlineEdit value={j.code} onCommit={(code) => code && saveJob({ ...j, code: code.toUpperCase() })} className="w-28 font-mono" />
+            <InlineEdit value={j.name} onCommit={(name) => saveJob({ ...j, name })} placeholder="Name" className="flex-1" />
+            <Button tone="quiet" size="sm" onClick={() => saveJob({ ...j, archived: !j.archived })}>
+              {j.archived ? 'Restore' : 'Hide'}
+            </Button>
+          </div>
+        ))}
+      </div>
+    </Section>
   )
 }
 

@@ -1,5 +1,5 @@
 import type { Op } from '@shared/ops'
-import type { ActivityEntry, Collection, Person, Project } from '@shared/types'
+import type { ActivityEntry, Collection, Job, Person, Project } from '@shared/types'
 import type { Cell, Timesheet } from '@shared/timesheet'
 
 export interface AppConfig {
@@ -9,6 +9,8 @@ export interface AppConfig {
   agentEdits: boolean
   reminders: boolean
   reminderTime: string
+  celebrations: boolean
+  sounds: boolean
   defaultDir: string
   version: string
 }
@@ -28,12 +30,15 @@ interface Api {
   getConfig(): Promise<AppConfig>
   setConfig(patch: Partial<AppConfig>): Promise<AppConfig>
   pickFolder(): Promise<string | null>
-  load(): Promise<{ online: boolean; projects: Project[]; templates: Project[]; people: Person[] }>
+  load(): Promise<{ online: boolean; projects: Project[]; templates: Project[]; people: Person[]; jobs: Job[] }>
   apply(c: Collection, id: string, ops: Op[]): Promise<{ project: Project; errors: string[] }>
   create(c: Collection, p: Project): Promise<Project>
   remove(c: Collection, id: string): Promise<void>
   activity(projectId: string): Promise<ActivityEntry[]>
   savePerson(p: Person): Promise<Person[]>
+  saveJob(j: Job): Promise<Job[]>
+  avatars(): Promise<Record<string, string>>
+  onJobs(cb: (x: Job[]) => void): () => void
   exportXlsx(projectId: string): Promise<string | null>
   loadSheets(): Promise<Timesheet[]>
   applySheet(person: string, week: string, cells: Record<string, Cell | null>): Promise<Timesheet>

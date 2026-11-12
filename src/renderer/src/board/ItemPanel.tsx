@@ -5,7 +5,7 @@ import { FLAG_LABELS, type ActivityEntry, type Collection, type Flag, type Proje
 import type { Op } from '@shared/ops'
 import { api } from '../api'
 import { useStore } from '../store'
-import { activity, fmtHours } from '@shared/timesheet'
+import { activity, cellGroup, fmtHours } from '@shared/timesheet'
 import { Avatar, Button, IconButton, InlineEdit, PeoplePicker, StatusChip, confirmDelete, cx, fmtWhen } from '../ui'
 
 const MARKS: { id: StepMark | null; label: string }[] = [
@@ -122,7 +122,7 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
           </div>
         </Block>
 
-        {!template && <TimeLogged itemId={item.id} projectId={project.id} />}
+        {!template && group && <TimeLogged project={project} groupId={group.g.id} groupName={group.g.name} />}
 
         <Block title="Quantity">
           <InlineEdit value={item.qty} onCommit={(qty) => update({ qty })} placeholder="e.g. 4" className="w-32 font-mono" />
@@ -195,8 +195,8 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
   )
 }
 
-/** Hours logged on this item in everyone's timesheets. */
-function TimeLogged({ itemId, projectId }: { itemId: string; projectId: string }) {
+/** Hours logged on this item's group in everyone's timesheets. */
+function TimeLogged({ project, groupId, groupName }: { project: Project; groupId: string; groupName: string }) {
   const sheets = useStore((s) => s.sheets)
   const people = useStore((s) => s.people)
   const openTimesheet = useStore((s) => s.openTimesheet)
@@ -204,17 +204,17 @@ function TimeLogged({ itemId, projectId }: { itemId: string; projectId: string }
     const m = new Map<string, number>()
     for (const t of Object.values(sheets))
       for (const c of Object.values(t.cells))
-        if (c.i === itemId) m.set(`${t.person}|${c.a}`, (m.get(`${t.person}|${c.a}`) ?? 0) + 0.5)
+        if (c.p === project.id && cellGroup(project, c) === groupId) m.set(`${t.person}|${c.a}`, (m.get(`${t.person}|${c.a}`) ?? 0) + 0.5)
     return [...m.entries()].map(([k, h]) => ({ person: k.split('|')[0], a: k.split('|')[1], h })).sort((a, b) => b.h - a.h)
-  }, [sheets, itemId])
+  }, [sheets, project, groupId])
   const total = rows.reduce((a, r) => a + r.h, 0)
 
   return (
-    <Block title={`Time logged${total ? `: ${fmtHours(total)}` : ''}`}>
+    <Block title={`Time on ${groupName}${total ? `: ${fmtHours(total)}` : ''}`}>
       {rows.length === 0 ? (
         <p className="px-2 text-[12.5px] text-faint">
-          No time logged on this item yet.{' '}
-          <button className="press text-ink underline underline-offset-2" onClick={() => openTimesheet({ prefill: { a: 'CM', p: projectId, i: itemId } })}>
+          No time logged on {groupName} yet.{' '}
+          <button className="press text-ink underline underline-offset-2" onClick={() => openTimesheet({ prefill: { a: 'CM', p: project.id, g: groupId } })}>
             Log time
           </button>
         </p>

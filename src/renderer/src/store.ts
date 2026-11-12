@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { applyOp, type Op } from '@shared/ops'
-import type { Collection, Person, Project } from '@shared/types'
-import { ACTIVITIES, applySheetCells, emptySheet, weekOf, type Cell, type Timesheet } from '@shared/timesheet'
+import type { Collection, Job, Person, Project } from '@shared/types'
+import { ACTIVITIES, applySheetCells, cellGroup, emptySheet, groupOfItem, weekOf, type Cell, type Timesheet } from '@shared/timesheet'
 import { api, errText, type AppConfig, type UpdateState } from './api'
+import { celebrate, finished, lastBy, type FunSettings, type Moment } from './fun'
 
 export type Route =
   | { page: 'projects' }
@@ -16,7 +17,7 @@ export type Route =
 export interface TimePrefill {
   a: string
   p?: string
-  i?: string
+  g?: string
 }
 
 interface Toast {
@@ -24,6 +25,16 @@ interface Toast {
   text: string
   tone: 'info' | 'error'
   action?: { label: string; run: () => void }
+  /** Toasts with the same key replace each other instead of stacking. */
+  key?: string
+}
+
+/** A shared milestone shown as a banner, e.g. "Precinct A is complete!" */
+export interface Milestone {
+  id: number
+  title: string
+  sub: string
+  big: boolean
 }
 
 interface Pending {
@@ -35,6 +46,10 @@ interface State {
   config: AppConfig | null
   online: boolean
   people: Person[]
+  jobs: Job[]
+  avatars: Record<string, string>
+  milestone: Milestone | null
+  fun(kind: Moment): void
   docs: Record<Collection, Record<string, Project>>
   route: Route
   openItem: string | null
@@ -59,7 +74,8 @@ interface State {
   createDoc(c: Collection, p: Project): Promise<boolean>
   removeDoc(c: Collection, id: string): Promise<void>
   savePerson(p: Person): Promise<void>
-  toast(text: string, tone?: Toast['tone'], action?: Toast['action']): void
+  saveJob(j: Job): Promise<boolean>
+  toast(text: string, tone?: Toast['tone'], action?: Toast['action'], key?: string): void
 }
 
 // Server copies (what is on the network drive) and edits not yet saved.
@@ -71,11 +87,13 @@ const sheetBase: Record<string, Timesheet> = {}
 const sheetPending: Record<string, Record<string, Cell | null>[]> = {}
 const sheetQueues: Record<string, Promise<void>> = {}
 
-/** True when someone has logged time on this item for work that goes towards the step. */
-export function hasTimeFor(sheets: Record<string, Timesheet>, itemId: string, stepId: string): boolean {
+/** True when someone has logged time on this item's group for work that goes towards the step. */
+export function hasTimeFor(sheets: Record<string, Timesheet>, p: Project, itemId: string, stepId: string): boolean {
   const codes = ACTIVITIES.filter((a) => a.step === stepId).map((a) => a.code)
+  const gid = groupOfItem(p, itemId)
   for (const t of Object.values(sheets))
-    for (const c of Object.values(t.cells)) if (c.i === itemId && (!codes.length || codes.includes(c.a))) return true
+    for (const c of Object.values(t.cells))
+      if (c.p === p.id && (c.i === itemId || (gid && cellGroup(p, c) === gid)) && (!codes.length || codes.includes(c.a))) return true
   return false
 }
 
@@ -123,16 +141,24 @@ export const useStore = create<State>((set, get) => {
     if (!p) return
     for (const op of ops) {
       if (op.type !== 'item.step' || op.mark !== 'done') continue
-      if (hasTimeFor(get().sheets, op.itemId, op.stepId)) continue
-      const item = p.sections.flatMap((s) => s.groups.flatMap((g) => g.items)).find((i) => i.id === op.itemId)
+      if (hasTimeFor(get().sheets, p, op.itemId, op.stepId)) continue
+      const grp = p.sections.flatMap((s) => s.groups).find((g) => g.items.some((i) => i.id === op.itemId))
+      const item = grp?.items.find((i) => i.id === op.itemId)
       const step = p.steps.find((s) => s.id === op.stepId)
-      if (!item || !step) continue
+      if (!grp || !item || !step) continue
       const a = ACTIVITIES.find((x) => x.step === op.stepId)?.code ?? 'MBC'
-      get().toast(`No time logged for ${step.label} on ${item.name} yet.`, 'info', {
+      get().toast(`${step.label} done on ${item.name}. No ${step.label.toLowerCase()} time logged on ${grp.name} yet.`, 'info', {
         label: 'Log time',
-        run: () => get().openTimesheet({ prefill: { a, p: p.id, i: item.id } })
-      })
+        run: () => get().openTimesheet({ prefill: { a, p: p.id, g: grp.id } })
+      }, 'time-nudge')
     }
+  }
+
+  const milestone = (f: ReturnType<typeof finished>, projectName: string, sub: string): void => {
+    const g = f.groups[0]
+    const title = f.project ? `${projectName} is complete!` : f.groups.length > 1 ? `${f.groups.map((x) => x.name).join(' and ')} are complete!` : `${g.name} is complete!`
+    get().fun(f.project ? 'project' : 'group')
+    set({ milestone: { id: Date.now(), title, sub: f.project ? sub || 'Every item, every step. Well done, team.' : sub || `${g.section}, ${projectName}`, big: f.project } })
   }
 
   return {
@@ -140,6 +166,14 @@ export const useStore = create<State>((set, get) => {
     config: null,
     online: true,
     people: [],
+    jobs: [],
+    avatars: {},
+    milestone: null,
+    fun(kind) {
+      const c = get().config
+      const s: FunSettings = { celebrations: c?.celebrations !== false, sounds: !!c?.sounds }
+      celebrate(kind, s)
+    },
     docs: { projects: {}, templates: {} },
     route: { page: 'projects' },
     openItem: null,
@@ -196,6 +230,17 @@ export const useStore = create<State>((set, get) => {
         if (cur && (project.rev ?? 0) < (cur.rev ?? 0)) return
         base[collection][project.id] = project
         view(collection, project.id)
+        // Someone else finished a group or the whole project: tell everyone.
+        if (collection === 'projects') {
+          const f = finished(cur, project)
+          if (f.project || f.groups.length) {
+            const by = lastBy(project, f.project ? undefined : f.groups[0].id)
+            if (by && by !== get().config?.userId) {
+              const who = get().people.find((p) => p.id === by)?.name ?? 'Someone'
+              milestone(f, project.name, `${who} ticked the last step`)
+            }
+          }
+        }
       })
       api().onRemoved(({ collection, id }) => {
         delete base[collection][id]
@@ -204,6 +249,7 @@ export const useStore = create<State>((set, get) => {
         if (r.page === 'board' && r.id === id) set({ route: { page: collection === 'projects' ? 'projects' : 'templates' } })
       })
       api().onPeople((people) => set({ people }))
+      api().onJobs((jobs) => set({ jobs }))
       api().onOnline((online) => {
         set({ online })
         get().toast(online ? 'Network folder is back. Changes are saving again.' : 'Lost the network folder. Showing the last copy, read only.', online ? 'info' : 'error')
@@ -228,7 +274,11 @@ export const useStore = create<State>((set, get) => {
       const sheets = await api().loadSheets()
       for (const k of Object.keys(sheetBase)) delete sheetBase[k]
       for (const t of sheets) sheetBase[t.person + '/' + t.week] = t
-      set({ online: r.online, people: r.people, docs: { projects: { ...base.projects }, templates: { ...base.templates } }, sheets: { ...sheetBase } })
+      api()
+        .avatars()
+        .then((avatars) => set({ avatars }))
+        .catch(() => {})
+      set({ online: r.online, people: r.people, jobs: r.jobs ?? [], docs: { projects: { ...base.projects }, templates: { ...base.templates } }, sheets: { ...sheetBase } })
     },
 
     async setConfig(patch) {
@@ -253,8 +303,15 @@ export const useStore = create<State>((set, get) => {
       checkTime(c, id, ops)
       const key = c + '/' + id
       const entry: Pending = { ops }
+      const before = get().docs[c][id]
       ;(pending[key] ??= []).push(entry)
       view(c, id)
+      // Rewards: a tick, confetti for a finished item, more for a group or the whole model.
+      if (c === 'projects' && ops.some((o) => o.type === 'item.step')) {
+        const f = finished(before, get().docs[c][id])
+        if (f.project || f.groups.length) milestone(f, before.name, '')
+        else get().fun(f.items.length ? 'item' : 'tick')
+      }
       set({ saving: get().saving + 1 })
       queues[key] = (queues[key] ?? Promise.resolve()).then(async () => {
         try {
@@ -293,6 +350,16 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
+    async saveJob(j) {
+      try {
+        set({ jobs: await api().saveJob(j) })
+        return true
+      } catch (e) {
+        get().toast(errText(e), 'error')
+        return false
+      }
+    },
+
     async savePerson(p) {
       try {
         set({ people: await api().savePerson(p) })
@@ -301,9 +368,9 @@ export const useStore = create<State>((set, get) => {
       }
     },
 
-    toast(text, tone = 'info', action) {
+    toast(text, tone = 'info', action, key) {
       const id = ++toastId
-      set({ toasts: [...get().toasts, { id, text, tone, action }] })
+      set({ toasts: [...get().toasts.filter((t) => !key || t.key !== key), { id, text, tone, action, key }] })
       setTimeout(() => set({ toasts: get().toasts.filter((t) => t.id !== id) }), action ? 9000 : tone === 'error' ? 6000 : 3500)
     }
   }

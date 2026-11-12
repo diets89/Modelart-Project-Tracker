@@ -68,11 +68,21 @@ export interface Project {
   rev: number
 }
 
+/** A job number with no tracker project, so time can still be logged to it. */
+export interface Job {
+  id: string
+  code: string // "P34/26"
+  name: string
+  archived?: boolean
+}
+
 export interface Person {
   id: string
   name: string
   initials: string
   color: string
+  /** File name of a picture in the data folder's avatars/ folder */
+  avatar?: string
   archived?: boolean
 }
 

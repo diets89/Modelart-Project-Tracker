@@ -3,7 +3,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { applyOp, describeOp, OpError, type Op } from '../shared/ops'
-import type { ActivityEntry, Collection, Person, Project } from '../shared/types'
+import type { ActivityEntry, Collection, Job, Person, Project } from '../shared/types'
 import { applySheetCells, emptySheet, type Cell, type Timesheet } from '../shared/timesheet'
 
 const LOCK_STALE_MS = 10_000
@@ -262,6 +262,45 @@ export class Storage {
       return list
     } finally {
       await release()
+    }
+  }
+
+  // ---------- job numbers without a tracker ----------
+  private jobsFile(): string {
+    return path.join(this.root, 'jobs.json')
+  }
+
+  async jobs(): Promise<Job[]> {
+    try {
+      return await this.readJson<Job[]>(this.jobsFile())
+    } catch {
+      return []
+    }
+  }
+
+  async saveJob(job: Job, by: string): Promise<Job[]> {
+    const f = this.jobsFile()
+    await fs.mkdir(this.root, { recursive: true })
+    const release = await this.lock(f, by)
+    try {
+      const list = await this.jobs()
+      const i = list.findIndex((j) => j.id === job.id)
+      const clash = list.find((j) => j.id !== job.id && !j.archived && j.code.toLowerCase() === job.code.toLowerCase())
+      if (clash && !job.archived) throw new Error(`Job ${job.code} is already on the list.`)
+      if (i >= 0) list[i] = job
+      else list.push(job)
+      await this.writeAtomic(f, JSON.stringify(list, null, 1))
+      return list
+    } finally {
+      await release()
+    }
+  }
+
+  async jobsMtime(): Promise<number> {
+    try {
+      return (await fs.stat(this.jobsFile())).mtimeMs
+    } catch {
+      return 0
     }
   }
 

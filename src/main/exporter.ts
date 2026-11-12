@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs'
 import { itemStatus, summarize, allItems } from '../shared/status'
-import { FLAG_LABELS, type Person, type Project } from '../shared/types'
-import { activity, DAYS, dayDate, SLOTS, slotTime, weekNo, type Timesheet } from '../shared/timesheet'
+import { FLAG_LABELS, type Job, type Person, type Project } from '../shared/types'
+import { activity, cellGroup, DAYS, dayDate, groupOf, SLOTS, slotTime, weekNo, type Timesheet } from '../shared/timesheet'
 
 const DONE = 'FF92D050' // the same green the team uses in the sheet
 const STARTED = 'FFE2F0CB'
@@ -76,7 +76,7 @@ const GENERAL = 'FFF1F1F3'
 const WORK = 'FFE8F1FB'
 
 /** One sheet per person in the familiar slot layout, plus a summary of hours. */
-export async function exportTimesheets(week: string, sheets: Timesheet[], people: Person[], projects: Project[], file: string): Promise<void> {
+export async function exportTimesheets(week: string, sheets: Timesheet[], people: Person[], projects: Project[], jobs: Job[], file: string): Promise<void> {
   const wb = new ExcelJS.Workbook()
   wb.creator = 'Modelart Tracker'
   const name = (id: string): string => people.find((p) => p.id === id)?.name ?? id
@@ -94,7 +94,7 @@ export async function exportTimesheets(week: string, sheets: Timesheet[], people
   sum.getCell('A1').value = `Timesheets, week ${weekNo(week)} (${range})`
   sum.getCell('A1').font = { bold: true, size: 14 }
   const hr = sum.getRow(3)
-  hr.values = ['Person', 'Job no.', 'Project', 'Item', 'Activity', 'Hours']
+  hr.values = ['Person', 'Job no.', 'Project', 'Part of the model', 'Activity', 'Hours']
   hr.font = { bold: true }
   hr.border = { bottom: { style: 'thin' } }
   let r = 4
@@ -102,8 +102,10 @@ export async function exportTimesheets(week: string, sheets: Timesheet[], people
     const totals = new Map<string, { job: string; project: string; item: string; act: string; n: number }>()
     for (const c of Object.values(t.cells)) {
       const p = proj(c.p)
-      const k = [c.p, c.i, c.a].join('|')
-      const cur = totals.get(k) ?? { job: p?.code ?? '', project: p?.name ?? '', item: itemName(p, c.i), act: `${c.a} ${activity(c.a)?.label ?? ''}`.trim(), n: 0 }
+      const j = jobs.find((x) => x.id === c.j)
+      const gid = cellGroup(p, c)
+      const k = [c.p, c.j, gid, c.a].join('|')
+      const cur = totals.get(k) ?? { job: p?.code ?? j?.code ?? '', project: p?.name ?? j?.name ?? '', item: groupOf(p, gid)?.name ?? '', act: `${c.a} ${activity(c.a)?.label ?? ''}`.trim(), n: 0 }
       cur.n++
       totals.set(k, cur)
     }
@@ -129,7 +131,7 @@ export async function exportTimesheets(week: string, sheets: Timesheet[], people
       c.value = `${DAYS[d]} ${fmt(dayDate(week, d))}`
       c.font = { bold: true }
       c.alignment = { horizontal: 'center' }
-      ;['Activity', 'Job No.', 'Item'].forEach((h, k) => {
+      ;['Activity', 'Job No.', 'Part'].forEach((h, k) => {
         const hc = ws.getCell(4, col + k)
         hc.value = h
         hc.font = { bold: true, size: 9 }
@@ -151,8 +153,8 @@ export async function exportTimesheets(week: string, sheets: Timesheet[], people
         const p = proj(c.p)
         const col = 2 + n * 3
         row.getCell(col).value = c.a
-        row.getCell(col + 1).value = p?.code ?? ''
-        row.getCell(col + 2).value = itemName(p, c.i)
+        row.getCell(col + 1).value = p?.code ?? jobs.find((x) => x.id === c.j)?.code ?? ''
+        row.getCell(col + 2).value = groupOf(p, cellGroup(p, c))?.name ?? ''
         const fill = activity(c.a)?.general ? GENERAL : WORK
         for (let k = 0; k < 3; k++) row.getCell(col + k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
       })

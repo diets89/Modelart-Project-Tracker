@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
-import { CheckSquareOffset, CircleNotch, Clock, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
+import { CheckSquareOffset, CircleNotch, Clock, Confetti, X, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
 import { allItems, summarize } from '@shared/status'
+import { streak } from '@shared/timesheet'
 import { api } from './api'
 import { useStore, type Route } from './store'
-import { Avatar, Button, cx } from './ui'
+import { Avatar, Button, StreakChip, cx } from './ui'
 import { Board } from './board/Board'
 import { Projects } from './pages/Projects'
 import { MyTasks } from './pages/MyTasks'
@@ -52,6 +53,7 @@ export function App() {
         </main>
       </div>
       <Toasts />
+      <MilestoneBanner />
     </div>
   )
 }
@@ -100,8 +102,10 @@ function Sidebar() {
     .filter((p) => p.status === 'active')
     .sort((a, b) => a.name.localeCompare(b.name))
   const me = useStore((s) => s.people.find((p) => p.id === s.config?.userId))
+  const sheets = useStore((s) => s.sheets)
+  const days = me ? streak(sheets, me.id) : 0
 
-  const Nav = ({ to, icon, label }: { to: Route; icon: React.ReactNode; label: string }) => {
+  const Nav = ({ to, icon, label, extra }: { to: Route; icon: React.ReactNode; label: string; extra?: React.ReactNode }) => {
     const on = route.page === to.page && (to.page !== 'board' || (route.page === 'board' && route.id === (to as { id: string }).id))
     return (
       <button
@@ -111,6 +115,7 @@ function Sidebar() {
       >
         {icon}
         <span className="truncate">{label}</span>
+        {extra && <span className="ml-auto">{extra}</span>}
       </button>
     )
   }
@@ -120,7 +125,7 @@ function Sidebar() {
       <div className="space-y-0.5">
         <Nav to={{ page: 'projects' }} icon={<SquaresFour size={17} />} label="Projects" />
         <Nav to={{ page: 'mine' }} icon={<CheckSquareOffset size={17} />} label="My tasks" />
-        <Nav to={{ page: 'timesheet' }} icon={<Clock size={17} />} label="Timesheet" />
+        <Nav to={{ page: 'timesheet' }} icon={<Clock size={17} />} label="Timesheet" extra={days >= 2 ? <StreakChip days={days} /> : null} />
         <Nav to={{ page: 'templates' }} icon={<Stack size={17} />} label="Templates" />
       </div>
 
@@ -156,6 +161,32 @@ function Sidebar() {
         </div>
       </div>
     </nav>
+  )
+}
+
+function MilestoneBanner() {
+  const m = useStore((s) => s.milestone)
+  useEffect(() => {
+    if (!m) return
+    const t = setTimeout(() => useStore.setState({ milestone: null }), m.big ? 10000 : 7000)
+    return () => clearTimeout(t)
+  }, [m])
+  if (!m) return null
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-14 z-50 flex justify-center" role="status" aria-live="polite">
+      <div key={m.id} className="pop-in pointer-events-auto flex items-center gap-3 rounded-2xl border border-line bg-panel py-3 pr-3 pl-4" style={{ boxShadow: 'var(--shadow)' }}>
+        <span className={cx('flex size-10 items-center justify-center rounded-xl', m.big ? 'bg-accent text-white' : 'bg-done-soft text-done')}>
+          <Confetti size={22} weight="fill" />
+        </span>
+        <span className="pr-2">
+          <span className="block text-[15px] font-semibold tracking-tight">{m.title}</span>
+          <span className="block text-[12.5px] text-muted">{m.sub}</span>
+        </span>
+        <button onClick={() => useStore.setState({ milestone: null })} aria-label="Close" className="press rounded-md p-1 text-muted hover:bg-hover hover:text-ink">
+          <X size={14} />
+        </button>
+      </div>
+    </div>
   )
 }
 

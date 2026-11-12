@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type ButtonHTMLAttributes, type InputHTMLAttributes } from 'react'
-import { Check, X } from '@phosphor-icons/react'
+import { Check, Fire, X } from '@phosphor-icons/react'
 import type { Person } from '@shared/types'
 import type { Status } from '@shared/status'
 import { useStore } from './store'
@@ -89,8 +89,11 @@ export function InlineEdit({
     focused.current = false
     if (v.trim() !== value) onCommit(v.trim())
   }
+  // Full width unless the caller sets a width, so two fields can share a row.
+  const sized = /(^|\s)(w-|flex-1)/.test(className ?? '')
   const cls = cx(
-    'w-full rounded-md border border-transparent bg-transparent px-2 py-1 text-ink placeholder:text-faint outline-none hover:border-line focus:border-accent focus:bg-panel',
+    'rounded-md border border-transparent bg-transparent px-2 py-1 text-ink placeholder:text-faint outline-none hover:border-line focus:border-accent focus:bg-panel',
+    sized ? 'min-w-0' : 'w-full',
     className
   )
   if (multiline)
@@ -130,6 +133,17 @@ export function InlineEdit({
 // ---------- people ----------
 export function Avatar({ person, size = 22, ring }: { person?: Person; size?: number; ring?: boolean }) {
   const label = person?.initials ?? '?'
+  const img = useStore((s) => (person?.avatar ? s.avatars[person.avatar] : undefined))
+  if (img)
+    return (
+      <span
+        title={person?.name}
+        className={cx('inline-flex shrink-0 items-end justify-center overflow-hidden rounded-full', ring && 'ring-2 ring-panel')}
+        style={{ width: size, height: size, background: person?.color ?? '#8a8a93' }}
+      >
+        <img src={img} alt="" draggable={false} className="h-[92%] w-[92%] object-contain object-bottom" />
+      </span>
+    )
   return (
     <span
       title={person?.name}
@@ -264,4 +278,13 @@ export function fmtWhen(iso: string): string {
   if (mins < 60) return `${Math.floor(mins)} min ago`
   if (mins < 60 * 24 && d.getDate() === new Date().getDate()) return 'today ' + d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
   return d.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' }) + ', ' + d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+}
+
+export function StreakChip({ days }: { days: number }) {
+  return (
+    <span title={`${days} weekdays in a row with your timesheet filled in`} className="inline-flex items-center gap-0.5 font-mono text-[11.5px] font-semibold text-wait">
+      <Fire size={13} weight="fill" />
+      {days}
+    </span>
+  )
 }
