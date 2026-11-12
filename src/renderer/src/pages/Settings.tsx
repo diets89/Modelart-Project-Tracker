@@ -117,6 +117,16 @@ export function Settings() {
         </div>
       </Section>
 
+      <Section title="Noticeboard">
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2.5">
+          <span className="flex-1">
+            <span className="block font-medium">Windows notification for new notices</span>
+            <span className="block text-[12.5px] text-muted">When someone sends you a notice, or posts on the public board, while the app is open.</span>
+          </span>
+          <input type="checkbox" checked={config.noticeAlerts !== false} onChange={(e) => setConfig({ noticeAlerts: e.target.checked })} className="size-4 accent-[var(--accent)]" />
+        </label>
+      </Section>
+
       <JobsSection />
 
       <AgentSection />

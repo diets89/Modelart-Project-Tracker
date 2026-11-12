@@ -168,8 +168,8 @@ export function AvatarStack({ ids, max = 3 }: { ids: string[]; max?: number }) {
   )
 }
 
-export function PeoplePicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const people = useStore((s) => s.people).filter((p) => !p.archived || value.includes(p.id))
+export function PeoplePicker({ value, onChange, exclude }: { value: string[]; onChange: (v: string[]) => void; exclude?: string }) {
+  const people = useStore((s) => s.people).filter((p) => p.id !== exclude && (!p.archived || value.includes(p.id)))
   return (
     <div className="flex flex-wrap gap-1.5">
       {people.map((p) => {

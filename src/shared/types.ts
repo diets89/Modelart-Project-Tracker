@@ -76,6 +76,32 @@ export interface Job {
   archived?: boolean
 }
 
+/** A file or folder on the server, opened in Explorer from a notice. */
+export interface NoticeLink {
+  path: string
+  kind: 'file' | 'folder'
+}
+
+/**
+ * A notice on the noticeboard. Personal notices go to the people in `to`;
+ * public ones (to is empty) are for everyone.
+ */
+export interface Notice {
+  id: string
+  from: string
+  to: string[]
+  title: string
+  message: string
+  links: NoticeLink[]
+  /** Optional link to a tracker item */
+  projectId?: string
+  itemId?: string
+  createdAt: string
+  readBy: string[]
+  doneBy?: string
+  doneAt?: string
+}
+
 export interface Person {
   id: string
   name: string

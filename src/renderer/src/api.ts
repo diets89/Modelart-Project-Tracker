@@ -1,5 +1,5 @@
 import type { Op } from '@shared/ops'
-import type { ActivityEntry, Collection, Job, Person, Project } from '@shared/types'
+import type { ActivityEntry, Collection, Job, Notice, NoticeLink, Person, Project } from '@shared/types'
 import type { Cell, Timesheet } from '@shared/timesheet'
 
 export interface AppConfig {
@@ -11,6 +11,7 @@ export interface AppConfig {
   reminderTime: string
   celebrations: boolean
   sounds: boolean
+  noticeAlerts: boolean
   defaultDir: string
   version: string
 }
@@ -38,6 +39,16 @@ interface Api {
   savePerson(p: Person): Promise<Person[]>
   saveJob(j: Job): Promise<Job[]>
   avatars(): Promise<Record<string, string>>
+  loadNotices(): Promise<Notice[]>
+  postNotice(n: Notice): Promise<Notice>
+  markNotice(id: string, action: 'read' | 'done' | 'undone'): Promise<Notice>
+  removeNotice(id: string): Promise<void>
+  pickPath(kind: 'file' | 'folder', from?: string): Promise<string[]>
+  checkPath(p: string): Promise<NoticeLink & { exists: boolean }>
+  revealPath(p: string): Promise<void>
+  pathForFile(f: File): string
+  onNotice(cb: (n: Notice) => void): () => void
+  onNoticeRemoved(cb: (id: string) => void): () => void
   onJobs(cb: (x: Job[]) => void): () => void
   exportXlsx(projectId: string): Promise<string | null>
   loadSheets(): Promise<Timesheet[]>

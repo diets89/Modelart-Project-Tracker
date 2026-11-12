@@ -21,7 +21,7 @@ Each change is a small operation ("Mia finished Machining on Gate House"). To sa
 
 Two people editing at the same time therefore never overwrite each other. Locks left behind by a crashed PC are cleared after 10 seconds. That timeout runs on each PC's own clock, because the file server's clock can be far off. Other PCs check for changes every 3 seconds.
 
-Data folder layout: `projects/`, `templates/`, `timesheets/`, `jobs.json`, `avatars/`, `activity/` (change log), `deleted/` (backups of anything deleted), `people.json`.
+Data folder layout: `projects/`, `templates/`, `timesheets/`, `notices/`, `jobs.json`, `avatars/`, `activity/` (change log), `deleted/` (backups of anything deleted), `people.json`.
 
 ## Timesheets
 
@@ -37,6 +37,20 @@ The **Timesheet** tab replaces the weekly Excel timesheets. It's separate from p
 - **Export** writes the week to Excel for admin: a summary plus one sheet per person.
 
 Stored as `timesheets/<person>/<2026-W46>.json` in the data folder, saved with the same lock and merge as projects.
+
+## Noticeboard
+
+For handing work over and for announcements.
+
+- **Personal notices** go to the people picked, e.g. Garth to Conrad: "Gate House: Drawing done, ready for machining", with the DXF attached as a link. Only the people it's sent to see it in the app.
+- **Public notices** are for everyone: deliveries, studio news.
+- **Links to files and folders** on the server: add them with *Add file* / *Add folder*, paste a path (Explorer's "Copy as path" works), or drag them in from Explorer. Clicking a link opens Explorer at the folder, with the file selected. Files are never opened or run from a notice. Only drive paths (`Z:\...`) and network paths (`\\server\share\...`) are accepted.
+- **Send a notice about this** in an item's panel prefills the title ("Gate House: Drawing done, ready for machining"), the item link and, for Assembly, the assembly people.
+- Recipients mark notices **Done**. The sender's *Sent* tab shows who has seen it and who has done it.
+- New notices pop up as a Windows notification while the app is open (Settings > Noticeboard). The sidebar shows a count: red for notices to you, grey for the public board.
+- Stored as one file per notice in `notices/`. Removing a notice (sender only) keeps a copy in `deleted/`.
+
+Personal notices are hidden from others in the app, but they are ordinary files on the shared drive, so they are not private from someone browsing the folder.
 
 ## Celebrations and pictures
 

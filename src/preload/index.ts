@@ -1,5 +1,5 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 
 const on =
   (channel: string) =>
@@ -21,6 +21,17 @@ const api = {
   savePerson: (p: unknown) => ipcRenderer.invoke('people:save', p),
   saveJob: (j: unknown) => ipcRenderer.invoke('jobs:save', j),
   avatars: () => ipcRenderer.invoke('avatars:list'),
+  loadNotices: () => ipcRenderer.invoke('notices:load'),
+  postNotice: (n: unknown) => ipcRenderer.invoke('notices:post', n),
+  markNotice: (id: string, action: string) => ipcRenderer.invoke('notices:mark', id, action),
+  removeNotice: (id: string) => ipcRenderer.invoke('notices:remove', id),
+  pickPath: (kind: string, from?: string) => ipcRenderer.invoke('path:pick', kind, from),
+  checkPath: (p: string) => ipcRenderer.invoke('path:check', p),
+  revealPath: (p: string) => ipcRenderer.invoke('path:reveal', p),
+  /** Full path of a file dragged in from Explorer. */
+  pathForFile: (f: File) => webUtils.getPathForFile(f),
+  onNotice: on('notice'),
+  onNoticeRemoved: on('notice-removed'),
   onJobs: on('jobs'),
   exportXlsx: (projectId: string) => ipcRenderer.invoke('export:xlsx', projectId),
   mcpInfo: () => ipcRenderer.invoke('mcp:info'),

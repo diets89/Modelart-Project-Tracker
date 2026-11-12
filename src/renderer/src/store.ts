@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { applyOp, type Op } from '@shared/ops'
-import type { Collection, Job, Person, Project } from '@shared/types'
+import type { Collection, Job, Notice, Person, Project } from '@shared/types'
 import { ACTIVITIES, applySheetCells, cellGroup, emptySheet, groupOfItem, weekOf, type Cell, type Timesheet } from '@shared/timesheet'
 import { api, errText, type AppConfig, type UpdateState } from './api'
 import { celebrate, finished, lastBy, type FunSettings, type Moment } from './fun'
@@ -12,6 +12,7 @@ export type Route =
   | { page: 'templates' }
   | { page: 'settings' }
   | { page: 'timesheet' }
+  | { page: 'notices' }
 
 /** What the timesheet editor starts with, e.g. after "Log time" on a ticked step. */
 export interface TimePrefill {
@@ -49,6 +50,13 @@ interface State {
   jobs: Job[]
   avatars: Record<string, string>
   milestone: Milestone | null
+  notices: Record<string, Notice>
+  /** Set to open the notice composer, prefilled. */
+  noticeDraft: Partial<Notice> | null
+  composeNotice(draft?: Partial<Notice>): void
+  postNotice(n: Notice): Promise<boolean>
+  markNotice(id: string, action: 'read' | 'done' | 'undone'): void
+  removeNotice(id: string): Promise<void>
   fun(kind: Moment): void
   docs: Record<Collection, Record<string, Project>>
   route: Route
@@ -169,6 +177,47 @@ export const useStore = create<State>((set, get) => {
     jobs: [],
     avatars: {},
     milestone: null,
+    notices: {},
+    noticeDraft: null,
+    composeNotice(draft = {}) {
+      set({ noticeDraft: draft })
+    },
+    async postNotice(n) {
+      try {
+        const saved = await api().postNotice(n)
+        set({ notices: { ...get().notices, [saved.id]: saved } })
+        return true
+      } catch (e) {
+        get().toast(errText(e), 'error')
+        return false
+      }
+    },
+    markNotice(id, action) {
+      const me = get().config?.userId ?? ''
+      const n = get().notices[id]
+      if (!n) return
+      const next: Notice = { ...n, readBy: n.readBy.includes(me) ? n.readBy : [...n.readBy, me] }
+      if (action === 'done') Object.assign(next, { doneBy: me, doneAt: new Date().toISOString() })
+      if (action === 'undone') {
+        delete next.doneBy
+        delete next.doneAt
+      }
+      set({ notices: { ...get().notices, [id]: next } })
+      api()
+        .markNotice(id, action)
+        .then((saved) => set({ notices: { ...get().notices, [id]: saved } }))
+        .catch((e) => get().toast(errText(e), 'error'))
+    },
+    async removeNotice(id) {
+      try {
+        await api().removeNotice(id)
+        const notices = { ...get().notices }
+        delete notices[id]
+        set({ notices })
+      } catch (e) {
+        get().toast(errText(e), 'error')
+      }
+    },
     fun(kind) {
       const c = get().config
       const s: FunSettings = { celebrations: c?.celebrations !== false, sounds: !!c?.sounds }
@@ -262,7 +311,16 @@ export const useStore = create<State>((set, get) => {
         sheetBase[key] = t
         sheetView(key)
       })
-      api().onNavigate((r) => r.page === 'timesheet' && get().openTimesheet({ week: weekOf(new Date()), person: get().config?.userId }))
+      api().onNavigate((r) => {
+        if (r.page === 'timesheet') get().openTimesheet({ week: weekOf(new Date()), person: get().config?.userId })
+        if (r.page === 'notices') get().go({ page: 'notices' })
+      })
+      api().onNotice((n) => set({ notices: { ...get().notices, [n.id]: n } }))
+      api().onNoticeRemoved((id) => {
+        const notices = { ...get().notices }
+        delete notices[id]
+        set({ notices })
+      })
       await get().reload()
       set({ ready: true })
     },
@@ -274,6 +332,10 @@ export const useStore = create<State>((set, get) => {
       const sheets = await api().loadSheets()
       for (const k of Object.keys(sheetBase)) delete sheetBase[k]
       for (const t of sheets) sheetBase[t.person + '/' + t.week] = t
+      api()
+        .loadNotices()
+        .then((list) => set({ notices: Object.fromEntries(list.map((n) => [n.id, n])) }))
+        .catch(() => {})
       api()
         .avatars()
         .then((avatars) => set({ avatars }))
@@ -378,3 +440,15 @@ export const useStore = create<State>((set, get) => {
 
 export const usePerson = (id: string | undefined): Person | undefined => useStore((s) => s.people.find((p) => p.id === id))
 export const me = (): string => useStore.getState().config?.userId ?? ''
+
+/** Notices this person hasn't seen yet: sent to them, or on the public board. */
+export function unreadNotices(notices: Record<string, Notice>, me: string): { mine: number; all: number } {
+  let mine = 0
+  let all = 0
+  for (const n of Object.values(notices)) {
+    if (n.from === me || n.readBy.includes(me)) continue
+    if (n.to.includes(me)) mine++
+    else if (n.to.length === 0) all++
+  }
+  return { mine, all }
+}

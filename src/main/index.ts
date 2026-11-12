@@ -4,9 +4,10 @@ import path from 'node:path'
 import { autoUpdater } from 'electron-updater'
 import { Storage } from './storage'
 import { exportXlsx, exportTimesheets } from './exporter'
+import { cleanPath } from '../shared/paths'
 import { SLOTS, todayIndex, weekOf, type Cell, type Timesheet } from '../shared/timesheet'
 import type { Op } from '../shared/ops'
-import type { Collection, Job, Person, Project } from '../shared/types'
+import type { Collection, Job, Notice, Person, Project } from '../shared/types'
 
 interface Config {
   dataDir: string
@@ -19,11 +20,13 @@ interface Config {
   reminderTime: string // "16:30"
   celebrations: boolean
   sounds: boolean
+  /** Windows notification when a notice arrives for you. */
+  noticeAlerts: boolean
 }
 
 const DEFAULT_DIR = 'Z:\\Data\\Shared Files\\Modelart Tracker'
 const configPath = (): string => path.join(app.getPath('userData'), 'config.json')
-let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true, reminders: true, reminderTime: '16:30', celebrations: true, sounds: false }
+let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true, reminders: true, reminderTime: '16:30', celebrations: true, sounds: false, noticeAlerts: true }
 let storage: Storage | null = null
 let win: BrowserWindow | null = null
 let online = true
@@ -106,6 +109,7 @@ async function poll(): Promise<void> {
       }
     }
   }
+  await pollNotices()
   const jm = await storage.jobsMtime()
   if (known['jobs'] !== jm) {
     known['jobs'] = jm
@@ -116,6 +120,60 @@ async function poll(): Promise<void> {
     known['people'] = pm
     send('people', await storage.people())
   }
+}
+
+// ---------- noticeboard ----------
+let noticesPrimed = false
+const forMe = (n: Notice): boolean => n.from !== config.userId && (n.to.length === 0 || n.to.includes(config.userId))
+
+async function pollNotices(): Promise<void> {
+  if (!storage) return
+  const m = await storage.noticeMtimes()
+  for (const [id, t] of Object.entries(m)) {
+    const key = 'notice/' + id
+    if (known[key] === t) continue
+    const isNew = !(key in known)
+    known[key] = t
+    try {
+      const n = await storage.readNotice(id)
+      send('notice', n)
+      // Only notices that turn up while the app is running pop up, not old ones at start.
+      if (isNew && noticesPrimed && forMe(n)) alertNotice(n)
+    } catch {
+      delete known[key] // mid-write, next poll gets it
+    }
+  }
+  for (const key of Object.keys(known))
+    if (key.startsWith('notice/') && !(key.slice(7) in m)) {
+      delete known[key]
+      send('notice-removed', key.slice(7))
+    }
+  noticesPrimed = true
+}
+
+async function alertNotice(n: Notice): Promise<void> {
+  if (config.noticeAlerts === false || !Notification.isSupported()) return
+  const people = (await storage?.people()) ?? []
+  const from = people.find((p) => p.id === n.from)?.name ?? 'Someone'
+  const note = new Notification({
+    title: n.to.length ? `${from}: ${n.title}` : `Noticeboard: ${n.title}`,
+    body: n.message || (n.links[0] ? path.basename(n.links[0].path) : ''),
+    icon: path.join(__dirname, '../../resources/icon.png')
+  })
+  note.on('click', () => {
+    if (!win) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    send('navigate', { page: 'notices' })
+  })
+  note.show()
+  if (process.env.MAT_DEBUG) console.log('[notice] alert shown:', n.title)
+}
+
+/** Only plain local or network paths: "Z:\..." or "\\server\share\...". */
+function checkPath(p: string): string {
+  return path.normalize(cleanPath(p))
 }
 
 function requireStorage(): Storage {
@@ -293,6 +351,78 @@ function registerIpc(): void {
       /* no avatars yet */
     }
     return out
+  })
+  ipcMain.handle('notices:load', async () => {
+    if (!storage || !online) return []
+    const list = await storage.notices()
+    const m = await storage.noticeMtimes()
+    for (const [id, t] of Object.entries(m)) known['notice/' + id] = t
+    noticesPrimed = true
+    return list
+  })
+  ipcMain.handle('notices:post', async (_e, n: Notice) => {
+    const s = requireStorage()
+    const saved = await s.postNotice({ ...n, from: config.userId, createdAt: new Date().toISOString(), readBy: [config.userId] })
+    const m = await s.noticeMtimes()
+    known['notice/' + saved.id] = m[saved.id]
+    return saved
+  })
+  ipcMain.handle('notices:mark', async (_e, id: string, action: 'read' | 'done' | 'undone') => {
+    const s = requireStorage()
+    const me = config.userId
+    const n = await s.updateNotice(
+      id,
+      (x) => {
+        if (!x.readBy.includes(me)) x.readBy.push(me)
+        if (action === 'done') Object.assign(x, { doneBy: me, doneAt: new Date().toISOString() })
+        if (action === 'undone') {
+          delete x.doneBy
+          delete x.doneAt
+        }
+      },
+      me
+    )
+    known['notice/' + id] = (await s.noticeMtimes())[id]
+    return n
+  })
+  ipcMain.handle('notices:remove', async (_e, id: string) => {
+    const s = requireStorage()
+    const n = await s.readNotice(id)
+    if (n.from !== config.userId) throw new Error('Only the person who posted a notice can remove it.')
+    await s.removeNotice(id, config.userId)
+    delete known['notice/' + id]
+  })
+  ipcMain.handle('path:pick', async (_e, kind: 'file' | 'folder', from?: string) => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: kind === 'file' ? 'Choose the file' : 'Choose the folder',
+      defaultPath: from || (storage ? path.parse(storage.root).root : undefined),
+      properties: kind === 'file' ? ['openFile', 'multiSelections'] : ['openDirectory']
+    })
+    return r.canceled ? [] : r.filePaths
+  })
+  ipcMain.handle('path:check', async (_e, p: string) => {
+    const clean = checkPath(p)
+    try {
+      const st = await fs.stat(clean)
+      return { path: clean, kind: st.isDirectory() ? 'folder' : 'file', exists: true }
+    } catch {
+      return { path: clean, kind: /\.[a-z0-9]{1,6}$/i.test(clean) ? 'file' : 'folder', exists: false }
+    }
+  })
+  // Opens Explorer: a folder opens as itself, a file opens its folder with the file selected.
+  // Files are never run from here.
+  ipcMain.handle('path:reveal', async (_e, p: string) => {
+    const clean = checkPath(p)
+    let st
+    try {
+      st = await fs.stat(clean)
+    } catch {
+      throw new Error(`Can't find ${clean}. It may have been moved or renamed.`)
+    }
+    if (st.isDirectory()) {
+      const err = await shell.openPath(clean)
+      if (err) throw new Error(err)
+    } else shell.showItemInFolder(clean)
   })
   ipcMain.handle('jobs:save', async (_e, j: Job) => {
     const list = await requireStorage().saveJob(j, config.userId)

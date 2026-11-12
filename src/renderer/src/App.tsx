@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
-import { CheckSquareOffset, CircleNotch, Clock, Confetti, X, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
+import { CheckSquareOffset, CircleNotch, Clock, Confetti, PushPin, X, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
 import { allItems, summarize } from '@shared/status'
 import { streak } from '@shared/timesheet'
 import { api } from './api'
-import { useStore, type Route } from './store'
+import { unreadNotices, useStore, type Route } from './store'
 import { Avatar, Button, StreakChip, cx } from './ui'
 import { Board } from './board/Board'
 import { Projects } from './pages/Projects'
@@ -11,6 +11,7 @@ import { MyTasks } from './pages/MyTasks'
 import { Templates } from './pages/Templates'
 import { Settings } from './pages/Settings'
 import { TimesheetPage } from './pages/Timesheet'
+import { Composer, Noticeboard } from './pages/Noticeboard'
 import { Setup } from './pages/Setup'
 import mark from '../../../resources/mark.png'
 
@@ -54,6 +55,7 @@ export function App() {
       </div>
       <Toasts />
       <MilestoneBanner />
+      {s.noticeDraft && <Composer draft={s.noticeDraft} onClose={() => useStore.setState({ noticeDraft: null })} />}
     </div>
   )
 }
@@ -70,6 +72,8 @@ function Page({ route }: { route: Route }) {
       return <Settings />
     case 'timesheet':
       return <TimesheetPage />
+    case 'notices':
+      return <Noticeboard />
     default:
       return <Projects />
   }
@@ -104,6 +108,8 @@ function Sidebar() {
   const me = useStore((s) => s.people.find((p) => p.id === s.config?.userId))
   const sheets = useStore((s) => s.sheets)
   const days = me ? streak(sheets, me.id) : 0
+  const notices = useStore((s) => s.notices)
+  const unread = unreadNotices(notices, me?.id ?? '')
 
   const Nav = ({ to, icon, label, extra }: { to: Route; icon: React.ReactNode; label: string; extra?: React.ReactNode }) => {
     const on = route.page === to.page && (to.page !== 'board' || (route.page === 'board' && route.id === (to as { id: string }).id))
@@ -125,6 +131,21 @@ function Sidebar() {
       <div className="space-y-0.5">
         <Nav to={{ page: 'projects' }} icon={<SquaresFour size={17} />} label="Projects" />
         <Nav to={{ page: 'mine' }} icon={<CheckSquareOffset size={17} />} label="My tasks" />
+        <Nav
+          to={{ page: 'notices' }}
+          icon={<PushPin size={17} />}
+          label="Noticeboard"
+          extra={
+            unread.mine + unread.all > 0 ? (
+              <span
+                title={`${unread.mine} for you, ${unread.all} on the public board`}
+                className={cx('min-w-[18px] rounded-full px-1.5 text-center font-mono text-[11px] leading-[18px] font-semibold', unread.mine ? 'bg-accent text-white' : 'bg-hover text-muted')}
+              >
+                {unread.mine + unread.all}
+              </span>
+            ) : null
+          }
+        />
         <Nav to={{ page: 'timesheet' }} icon={<Clock size={17} />} label="Timesheet" extra={days >= 2 ? <StreakChip days={days} /> : null} />
         <Nav to={{ page: 'templates' }} icon={<Stack size={17} />} label="Templates" />
       </div>

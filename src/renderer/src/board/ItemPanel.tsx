@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Trash, X } from '@phosphor-icons/react'
+import { PushPin, Trash, X } from '@phosphor-icons/react'
 import { itemStatus } from '@shared/status'
 import { FLAG_LABELS, type ActivityEntry, type Collection, type Flag, type Project, type StepMark } from '@shared/types'
 import type { Op } from '@shared/ops'
@@ -44,6 +44,16 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
   const update = (patch: Extract<Op, { type: 'item.update' }>['patch']): void => op([{ type: 'item.update', itemId: item.id, patch }])
   const status = itemStatus(item, project.steps)
 
+  // Hand-over notice, e.g. "Gate House: Drawing done, ready for machining".
+  const sendNotice = (): void => {
+    const steps = project.steps.filter((s) => item.steps[s.id]?.s !== 'na')
+    const next = steps.find((s) => item.steps[s.id]?.s !== 'done')
+    const prev = next ? steps[steps.indexOf(next) - 1] : steps[steps.length - 1]
+    const title = next && prev && item.steps[prev.id]?.s === 'done' ? `${item.name}: ${prev.label} done, ready for ${next.label.toLowerCase()}` : item.name
+    const to = next?.id === 'assy' ? item.assyBy : next?.id === 'draw' ? item.drawBy : []
+    useStore.getState().composeNotice({ title, ...(to.length ? { to } : {}), projectId: project.id, itemId: item.id })
+  }
+
   return (
     <aside className="slide-in flex w-[400px] shrink-0 flex-col border-l border-line bg-panel" aria-label="Item details">
       <div className="flex items-start gap-2 border-b border-line px-4 pt-3 pb-3">
@@ -76,6 +86,14 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
                 </option>
               ))}
             </select>
+          </div>
+        )}
+
+        {!template && (
+          <div className="px-2">
+            <Button size="sm" icon={<PushPin size={14} />} onClick={sendNotice}>
+              Send a notice about this
+            </Button>
           </div>
         )}
 

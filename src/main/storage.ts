@@ -3,7 +3,7 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { applyOp, describeOp, OpError, type Op } from '../shared/ops'
-import type { ActivityEntry, Collection, Job, Person, Project } from '../shared/types'
+import type { ActivityEntry, Collection, Job, Notice, Person, Project } from '../shared/types'
 import { applySheetCells, emptySheet, type Cell, type Timesheet } from '../shared/timesheet'
 
 const LOCK_STALE_MS = 10_000
@@ -18,7 +18,7 @@ export class Storage {
     private staleMs = LOCK_STALE_MS
   ) {}
 
-  dir(c: Collection | 'activity' | 'timesheets'): string {
+  dir(c: Collection | 'activity' | 'timesheets' | 'notices'): string {
     return path.join(this.root, c)
   }
 
@@ -28,7 +28,7 @@ export class Storage {
   }
 
   async ensure(): Promise<void> {
-    for (const d of ['projects', 'templates', 'activity', 'timesheets'] as const) await fs.mkdir(this.dir(d), { recursive: true })
+    for (const d of ['projects', 'templates', 'activity', 'timesheets', 'notices'] as const) await fs.mkdir(this.dir(d), { recursive: true })
   }
 
   async online(): Promise<boolean> {
@@ -260,6 +260,78 @@ export class Storage {
       else list.push(person)
       await this.writeAtomic(f, JSON.stringify(list, null, 1))
       return list
+    } finally {
+      await release()
+    }
+  }
+
+  // ---------- noticeboard: one file per notice in notices/ ----------
+  private noticeFile(id: string): string {
+    if (!/^[a-z0-9-]+$/i.test(id)) throw new Error('Bad notice id')
+    return path.join(this.dir('notices'), id + '.json')
+  }
+
+  async noticeMtimes(): Promise<Record<string, number>> {
+    const out: Record<string, number> = {}
+    let names: string[] = []
+    try {
+      names = (await fs.readdir(this.dir('notices'))).filter((n) => n.endsWith('.json'))
+    } catch {
+      return out
+    }
+    for (const n of names) {
+      try {
+        out[n.slice(0, -5)] = (await fs.stat(path.join(this.dir('notices'), n))).mtimeMs
+      } catch {
+        /* removed */
+      }
+    }
+    return out
+  }
+
+  async readNotice(id: string): Promise<Notice> {
+    return this.readJson<Notice>(this.noticeFile(id))
+  }
+
+  async notices(): Promise<Notice[]> {
+    const out: Notice[] = []
+    for (const id of Object.keys(await this.noticeMtimes())) {
+      try {
+        out.push(await this.readNotice(id))
+      } catch {
+        /* mid-write */
+      }
+    }
+    return out
+  }
+
+  async postNotice(n: Notice): Promise<Notice> {
+    await fs.mkdir(this.dir('notices'), { recursive: true })
+    await this.writeAtomic(this.noticeFile(n.id), JSON.stringify(n, null, 1))
+    return n
+  }
+
+  /** Changes a notice on the latest copy, under the lock, e.g. marking it read or done. */
+  async updateNotice(id: string, change: (n: Notice) => void, by: string): Promise<Notice> {
+    const f = this.noticeFile(id)
+    const release = await this.lock(f, by)
+    try {
+      const n = await this.readNotice(id)
+      change(n)
+      await this.writeAtomic(f, JSON.stringify(n, null, 1))
+      return n
+    } finally {
+      await release()
+    }
+  }
+
+  async removeNotice(id: string, by: string): Promise<void> {
+    const f = this.noticeFile(id)
+    const release = await this.lock(f, by)
+    try {
+      const trash = path.join(this.root, 'deleted')
+      await fs.mkdir(trash, { recursive: true })
+      await fs.rename(f, path.join(trash, `notice-${id}-${Date.now()}.json`))
     } finally {
       await release()
     }
