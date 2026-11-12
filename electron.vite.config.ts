@@ -5,7 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    build: { externalizeDeps: true }
+    // The MCP server is a second entry: out/main/mcp.js, run by the app's own exe in Node mode.
+    build: { externalizeDeps: true, rollupOptions: { input: { index: resolve('src/main/index.ts'), mcp: resolve('src/mcp/index.ts') } } }
   },
   preload: {
     build: { externalizeDeps: true }

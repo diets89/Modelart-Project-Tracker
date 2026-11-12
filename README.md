@@ -23,6 +23,17 @@ Two people editing at the same time therefore never overwrite each other. Locks 
 
 Data folder layout: `projects/`, `templates/`, `activity/` (change log), `deleted/` (backups of anything deleted), `people.json`.
 
+## AI agent (MCP)
+
+The app ships an MCP server so an AI assistant (Claude Desktop, Claude Code, or any MCP client) can read projects and, if allowed, tick steps, update items, add items and create projects. Set it up in **Settings > AI agent**: *Connect* adds it to Claude Desktop, or copy the config for other apps.
+
+- It runs the installed exe in Node mode (`ELECTRON_RUN_AS_NODE=1`) with `resources/app.asar/out/main/mcp.js`, so it updates with the app.
+- It uses the data folder and name chosen in the app on that PC (override with `--data <folder>` and `--user <name>`).
+- It saves through the same lock and merge path as the app. Changes are logged under the PC user's name, marked "via AI".
+- **Allow changes** off (or `--read-only`) makes it read only. Nothing can be deleted through it.
+
+Source: `src/mcp/index.ts`.
+
 ## Development
 
 ```bash

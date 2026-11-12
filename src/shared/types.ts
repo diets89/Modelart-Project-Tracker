@@ -82,6 +82,8 @@ export interface ActivityEntry {
   projectId: string
   itemId?: string
   text: string
+  /** Set when the change came from an AI agent through the MCP server. */
+  via?: 'ai'
 }
 
 export type Collection = 'projects' | 'templates'

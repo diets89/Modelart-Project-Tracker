@@ -5,6 +5,7 @@ export interface AppConfig {
   dataDir: string
   userId: string
   theme: 'system' | 'light' | 'dark'
+  agentEdits: boolean
   defaultDir: string
   version: string
 }
@@ -14,6 +15,11 @@ export type UpdateState =
   | { state: 'downloading'; version?: string; percent?: number }
   | { state: 'ready'; version: string }
   | { state: 'error'; message: string }
+
+export interface McpInfo {
+  launch: { command: string; args: string[]; env: Record<string, string> }
+  claude: boolean
+}
 
 interface Api {
   getConfig(): Promise<AppConfig>
@@ -26,6 +32,8 @@ interface Api {
   activity(projectId: string): Promise<ActivityEntry[]>
   savePerson(p: Person): Promise<Person[]>
   exportXlsx(projectId: string): Promise<string | null>
+  mcpInfo(): Promise<McpInfo>
+  connectClaude(): Promise<boolean>
   checkUpdate(): Promise<UpdateState>
   installUpdate(): Promise<void>
   onChanged(cb: (x: { collection: Collection; project: Project }) => void): () => void

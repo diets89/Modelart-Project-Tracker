@@ -145,7 +145,7 @@ export class Storage {
     return this.readJson<Project>(this.file(c, id))
   }
 
-  async create(c: Collection, p: Project, by: string): Promise<Project> {
+  async create(c: Collection, p: Project, by: string, via?: 'ai'): Promise<Project> {
     await this.ensure()
     const f = this.file(c, p.id)
     const release = await this.lock(f, by)
@@ -160,7 +160,7 @@ export class Storage {
     } finally {
       await release()
     }
-    if (c === 'projects') await this.log({ at: p.createdAt, by, projectId: p.id, text: `created project ${p.name}` })
+    if (c === 'projects') await this.log({ at: p.createdAt, by, projectId: p.id, text: `created project ${p.name}`, via })
     return p
   }
 
@@ -178,7 +178,7 @@ export class Storage {
   }
 
   /** Re-reads the latest file, applies ops, writes back. Returns the saved project. */
-  async apply(c: Collection, id: string, ops: Op[], by: string): Promise<{ project: Project; errors: string[] }> {
+  async apply(c: Collection, id: string, ops: Op[], by: string, via?: 'ai'): Promise<{ project: Project; errors: string[] }> {
     const f = this.file(c, id)
     const release = await this.lock(f, by)
     const errors: string[] = []
@@ -191,7 +191,7 @@ export class Storage {
         const desc = describeOp(project, op)
         try {
           applyOp(project, op, { by, at })
-          entries.push({ at, by, projectId: id, itemId: desc.itemId, text: desc.text })
+          entries.push({ at, by, projectId: id, itemId: desc.itemId, text: desc.text, via })
         } catch (e) {
           if (e instanceof OpError) errors.push(e.message)
           else throw e

@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { ArrowsClockwise, FolderOpen, Plus } from '@phosphor-icons/react'
+import { useEffect, useState } from 'react'
+import { ArrowsClockwise, Check, CopySimple, FolderOpen, Plus } from '@phosphor-icons/react'
 import type { Person } from '@shared/types'
-import { api } from '../api'
+import { api, errText, type McpInfo } from '../api'
 import { useStore } from '../store'
 import { Avatar, Button, InlineEdit, TextInput, cx } from '../ui'
 
@@ -70,6 +70,8 @@ export function Settings() {
         </form>
       </Section>
 
+      <AgentSection />
+
       <Section title="Shared data folder" text="Every PC must point at the same folder on the network drive.">
         <div className="flex items-center gap-2">
           <code className="flex-1 truncate rounded-lg border border-line bg-sunken px-3 py-2 font-mono text-[12.5px]">{config.dataDir}</code>
@@ -115,6 +117,93 @@ export function Settings() {
           )}
         </div>
       </Section>
+    </div>
+  )
+}
+
+function AgentSection() {
+  const config = useStore((s) => s.config)!
+  const setConfig = useStore((s) => s.setConfig)
+  const toast = useStore((s) => s.toast)
+  const [info, setInfo] = useState<McpInfo | null>(null)
+  const [more, setMore] = useState(false)
+  const [copied, setCopied] = useState('')
+  const refresh = (): void => void api().mcpInfo().then(setInfo)
+  useEffect(refresh, [config.agentEdits])
+
+  if (!info) return null
+  const q = (s: string): string => (/[\s"]/.test(s) ? `"${s}"` : s)
+  const json = JSON.stringify({ mcpServers: { 'modelart-tracker': info.launch } }, null, 2)
+  const cli = `claude mcp add modelart-tracker --scope user -e ELECTRON_RUN_AS_NODE=1 -- ${[info.launch.command, ...info.launch.args].map(q).join(' ')}`
+  const copy = (key: string, value: string): void => {
+    navigator.clipboard.writeText(value)
+    setCopied(key)
+    setTimeout(() => setCopied(''), 1500)
+  }
+  const connect = async (): Promise<void> => {
+    try {
+      await api().connectClaude()
+      refresh()
+      toast('Connected. Restart Claude Desktop to load Modelart Tracker.')
+    } catch (e) {
+      toast(errText(e), 'error')
+    }
+  }
+
+  return (
+    <Section title="AI agent" text="Lets an AI assistant such as Claude look up projects and, if you allow it, tick steps and update items for you. Its changes are saved under your name and marked “via AI” in the history.">
+      <div className="divide-y divide-line rounded-xl border border-line bg-panel">
+        <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5">
+          <span className="flex-1">
+            <span className="block font-medium">Allow changes</span>
+            <span className="block text-[12.5px] text-muted">Off: the agent can only read.</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={config.agentEdits !== false}
+            onChange={(e) => setConfig({ agentEdits: e.target.checked })}
+            className="size-4 accent-[var(--accent)]"
+          />
+        </label>
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <span className="flex-1">
+            <span className="block font-medium">Claude Desktop</span>
+            <span className="block text-[12.5px] text-muted">{info.claude ? 'Connected. Restart Claude if you just connected it.' : 'Adds Modelart Tracker to Claude on this PC.'}</span>
+          </span>
+          {info.claude ? (
+            <span className="flex items-center gap-1 text-[13px] font-medium text-done">
+              <Check size={14} weight="bold" /> Connected
+            </span>
+          ) : (
+            <Button tone="primary" onClick={connect}>
+              Connect
+            </Button>
+          )}
+        </div>
+      </div>
+      <button onClick={() => setMore(!more)} className="press mt-2 text-[12.5px] text-muted hover:text-ink">
+        {more ? 'Hide setup for other apps' : 'Other AI apps and Claude Code'}
+      </button>
+      {more && (
+        <div className="mt-2 space-y-3">
+          <Snippet label="MCP config (Claude Desktop, Cursor, most agents)" value={json} copied={copied === 'json'} onCopy={() => copy('json', json)} />
+          <Snippet label="Claude Code (run once in a terminal)" value={cli} copied={copied === 'cli'} onCopy={() => copy('cli', cli)} />
+        </div>
+      )}
+    </Section>
+  )
+}
+
+function Snippet({ label, value, copied, onCopy }: { label: string; value: string; copied: boolean; onCopy: () => void }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between">
+        <span className="text-[12px] font-medium text-muted">{label}</span>
+        <Button size="sm" tone="quiet" icon={copied ? <Check size={13} /> : <CopySimple size={13} />} onClick={onCopy}>
+          {copied ? 'Copied' : 'Copy'}
+        </Button>
+      </div>
+      <pre className="overflow-x-auto rounded-lg border border-line bg-sunken px-3 py-2 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap break-all">{value}</pre>
     </div>
   )
 }

@@ -38,6 +38,7 @@ export function ActivityDrawer({ project, onClose }: { project: Project; onClose
                 <Avatar person={p} size={22} />
                 <button className="min-w-0 flex-1 text-left leading-snug" onClick={() => h.itemId && setOpenItem(h.itemId)}>
                   <b className="font-medium">{p?.name ?? h.by}</b> <span className="text-muted">{h.text}</span>
+                  {h.via === 'ai' && <span className="ml-1 rounded bg-hover px-1 py-px text-[10.5px] font-medium text-muted">via AI</span>}
                   <span className="block text-[11.5px] text-faint">{fmtWhen(h.at)}</span>
                 </button>
               </li>

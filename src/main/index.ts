@@ -11,11 +11,13 @@ interface Config {
   dataDir: string
   userId: string
   theme: 'system' | 'light' | 'dark'
+  /** Whether an AI agent connected over MCP may make changes. */
+  agentEdits: boolean
 }
 
 const DEFAULT_DIR = 'Z:\\Data\\Shared Files\\Modelart Tracker'
 const configPath = (): string => path.join(app.getPath('userData'), 'config.json')
-let config: Config = { dataDir: '', userId: '', theme: 'system' }
+let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true }
 let storage: Storage | null = null
 let win: BrowserWindow | null = null
 let online = true
@@ -104,6 +106,55 @@ async function markKnown(c: Collection, id: string): Promise<void> {
   if (m[id]) known[c + '/' + id] = m[id]
 }
 
+// ---------- MCP (AI agent) connection ----------
+// The agent runs this app's own exe in Node mode with the bundled MCP server script.
+function mcpLaunch(): { command: string; args: string[]; env: Record<string, string> } {
+  const script = app.isPackaged ? path.join(process.resourcesPath, 'app.asar', 'out', 'main', 'mcp.js') : path.join(app.getAppPath(), 'out', 'main', 'mcp.js')
+  return { command: process.execPath, args: [script, ...(config.agentEdits ? [] : ['--read-only'])], env: { ELECTRON_RUN_AS_NODE: '1' } }
+}
+
+/** Claude Desktop config files: the Microsoft Store build keeps its own copy of AppData. */
+async function claudeConfigFiles(): Promise<string[]> {
+  const out: string[] = []
+  const local = process.env.LOCALAPPDATA ?? ''
+  try {
+    for (const d of await fs.readdir(path.join(local, 'Packages')))
+      if (/^Claude_/i.test(d)) out.push(path.join(local, 'Packages', d, 'LocalCache', 'Roaming', 'Claude', 'claude_desktop_config.json'))
+  } catch {
+    /* no Store apps folder */
+  }
+  const classic = path.join(app.getPath('appData'), 'Claude')
+  if (!out.length || (await fs.access(classic).then(() => true, () => false))) out.push(path.join(classic, 'claude_desktop_config.json'))
+  return out
+}
+
+async function claudeConnected(): Promise<boolean> {
+  for (const f of await claudeConfigFiles()) {
+    try {
+      if (JSON.parse(await fs.readFile(f, 'utf8')).mcpServers?.['modelart-tracker']) return true
+    } catch {
+      /* missing or unreadable */
+    }
+  }
+  return false
+}
+
+async function connectClaude(): Promise<void> {
+  for (const f of await claudeConfigFiles()) {
+    let cfg: { mcpServers?: Record<string, unknown> } = {}
+    try {
+      const raw = await fs.readFile(f, 'utf8')
+      cfg = JSON.parse(raw)
+      await fs.writeFile(f + '.bak', raw)
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`Couldn't read ${f}. Fix or remove it, then try again.`)
+    }
+    cfg.mcpServers = { ...cfg.mcpServers, 'modelart-tracker': mcpLaunch() }
+    await fs.mkdir(path.dirname(f), { recursive: true })
+    await fs.writeFile(f, JSON.stringify(cfg, null, 2))
+  }
+}
+
 // ---------- IPC ----------
 function registerIpc(): void {
   ipcMain.handle('config:get', () => ({ ...config, defaultDir: DEFAULT_DIR, version: app.getVersion() }))
@@ -115,6 +166,7 @@ function registerIpc(): void {
       for (const k of Object.keys(known)) delete known[k]
     }
     if (patch.theme) applyTheme()
+    if (patch.agentEdits !== undefined && (await claudeConnected())) await connectClaude()
     await saveConfig()
     return config
   })
@@ -175,6 +227,12 @@ function registerIpc(): void {
     await exportXlsx(project, people, r.filePath)
     shell.showItemInFolder(r.filePath)
     return r.filePath
+  })
+
+  ipcMain.handle('mcp:info', async () => ({ launch: mcpLaunch(), claude: await claudeConnected() }))
+  ipcMain.handle('mcp:connect-claude', async () => {
+    await connectClaude()
+    return true
   })
 
   ipcMain.handle('update:check', async () => {

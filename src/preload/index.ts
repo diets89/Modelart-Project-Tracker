@@ -20,6 +20,8 @@ const api = {
   activity: (projectId: string) => ipcRenderer.invoke('data:activity', projectId),
   savePerson: (p: unknown) => ipcRenderer.invoke('people:save', p),
   exportXlsx: (projectId: string) => ipcRenderer.invoke('export:xlsx', projectId),
+  mcpInfo: () => ipcRenderer.invoke('mcp:info'),
+  connectClaude: () => ipcRenderer.invoke('mcp:connect-claude'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   onChanged: on('changed'),
