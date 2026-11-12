@@ -70,6 +70,23 @@ export function Settings() {
         </form>
       </Section>
 
+      <Section title="Timesheet reminder" text="A Windows notification on weekdays if you haven't filled in most of the day yet. It only shows while Modelart Tracker is open.">
+        <div className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2.5">
+          <label className="flex flex-1 cursor-pointer items-center gap-3">
+            <input type="checkbox" checked={config.reminders !== false} onChange={(e) => setConfig({ reminders: e.target.checked })} className="size-4 accent-[var(--accent)]" />
+            <span className="font-medium">Remind me to fill in my timesheet</span>
+          </label>
+          <input
+            type="time"
+            value={config.reminderTime || '16:30'}
+            disabled={config.reminders === false}
+            onChange={(e) => e.target.value && setConfig({ reminderTime: e.target.value })}
+            aria-label="Reminder time"
+            className="h-8 rounded-lg border border-line bg-panel px-2 font-mono text-[13px] outline-none focus:border-accent disabled:opacity-45"
+          />
+        </div>
+      </Section>
+
       <AgentSection />
 
       <Section title="Shared data folder" text="Every PC must point at the same folder on the network drive.">

@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { applyOp, describeOp, OpError, type Op } from '../shared/ops'
 import type { ActivityEntry, Collection, Person, Project } from '../shared/types'
+import { applySheetCells, emptySheet, type Cell, type Timesheet } from '../shared/timesheet'
 
 const LOCK_STALE_MS = 10_000
 const LOCK_WAIT_MS = 8_000
@@ -17,7 +18,7 @@ export class Storage {
     private staleMs = LOCK_STALE_MS
   ) {}
 
-  dir(c: Collection | 'activity'): string {
+  dir(c: Collection | 'activity' | 'timesheets'): string {
     return path.join(this.root, c)
   }
 
@@ -27,7 +28,7 @@ export class Storage {
   }
 
   async ensure(): Promise<void> {
-    for (const d of ['projects', 'templates', 'activity'] as const) await fs.mkdir(this.dir(d), { recursive: true })
+    for (const d of ['projects', 'templates', 'activity', 'timesheets'] as const) await fs.mkdir(this.dir(d), { recursive: true })
   }
 
   async online(): Promise<boolean> {
@@ -270,5 +271,61 @@ export class Storage {
     } catch {
       return 0
     }
+  }
+
+  // ---------- timesheets: timesheets/<person>/<2026-W46>.json ----------
+  sheetFile(person: string, week: string): string {
+    if (!/^[a-z0-9-]+$/i.test(person) || !/^\d{4}-W\d{2}$/.test(week)) throw new Error('Bad timesheet id')
+    return path.join(this.dir('timesheets'), person, week + '.json')
+  }
+
+  async readSheet(person: string, week: string): Promise<Timesheet> {
+    try {
+      return await this.readJson<Timesheet>(this.sheetFile(person, week))
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') return emptySheet(person, week)
+      throw e
+    }
+  }
+
+  async applySheet(person: string, week: string, cells: Record<string, Cell | null>, by: string): Promise<Timesheet> {
+    const f = this.sheetFile(person, week)
+    await fs.mkdir(path.dirname(f), { recursive: true })
+    const release = await this.lock(f, by)
+    try {
+      const t = await this.readSheet(person, week)
+      applySheetCells(t, cells, new Date().toISOString())
+      await this.writeAtomic(f, JSON.stringify(t))
+      return t
+    } finally {
+      await release()
+    }
+  }
+
+  /** "person/week" -> modified time, for every timesheet. */
+  async sheetMtimes(): Promise<Record<string, number>> {
+    const out: Record<string, number> = {}
+    let people: string[] = []
+    try {
+      people = await fs.readdir(this.dir('timesheets'))
+    } catch {
+      return out
+    }
+    for (const person of people) {
+      let names: string[] = []
+      try {
+        names = (await fs.readdir(path.join(this.dir('timesheets'), person))).filter((n) => /^\d{4}-W\d{2}\.json$/.test(n))
+      } catch {
+        continue
+      }
+      for (const n of names) {
+        try {
+          out[`${person}/${n.slice(0, -5)}`] = (await fs.stat(path.join(this.dir('timesheets'), person, n))).mtimeMs
+        } catch {
+          /* removed */
+        }
+      }
+    }
+    return out
   }
 }

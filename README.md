@@ -21,7 +21,21 @@ Each change is a small operation ("Mia finished Machining on Gate House"). To sa
 
 Two people editing at the same time therefore never overwrite each other. Locks left behind by a crashed PC are cleared after 10 seconds. That timeout runs on each PC's own clock, because the file server's clock can be far off. Other PCs check for changes every 3 seconds.
 
-Data folder layout: `projects/`, `templates/`, `activity/` (change log), `deleted/` (backups of anything deleted), `people.json`.
+Data folder layout: `projects/`, `templates/`, `timesheets/`, `activity/` (change log), `deleted/` (backups of anything deleted), `people.json`.
+
+## Timesheets
+
+The **Timesheet** tab replaces the weekly Excel timesheets. It's separate from project tracking: time entry never changes a project.
+
+- Same layout as the sheets: 30-minute slots from 06:00 to 19:00, the same activity codes. Drag over the grid, pick the activity, project (job no.) and item, press Fill.
+- Time is logged against items, which is what the quote comparison will use later.
+- General time (Admin General, Lunch/Tea, Out Personal, Out Modelart, Quoting, Studio Maintenance) doesn't count against a project.
+- Anyone can fill in someone else's sheet (for the team on paper timesheets). Those entries note who captured them.
+- Ticking a step **done** with no matching time on that item shows a reminder with a *Log time* button. Drawing matches CM and CM Art; Machining matches Mch and Pnt; Assembly matches MBC, P/F, P/L and LI; Install matches FPM.
+- Weekday reminder at 16:30 (Settings > Timesheet reminder) if less than 7 hours are logged for the day. It only shows while the app is open.
+- **Export** writes the week to Excel for admin: a summary plus one sheet per person.
+
+Stored as `timesheets/<person>/<2026-W46>.json` in the data folder, saved with the same lock and merge as projects.
 
 ## AI agent (MCP)
 

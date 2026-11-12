@@ -93,8 +93,8 @@ export function NewProject({ onClose, asTemplate }: { onClose: () => void; asTem
         </div>
         {!asTemplate && (
           <>
-            <Field label="Project code">
-              <TextInput value={d.code} onChange={(e) => setD({ ...d, code: e.target.value })} placeholder="P26/27" />
+            <Field label="Job no.">
+              <TextInput value={d.code} onChange={(e) => setD({ ...d, code: e.target.value })} placeholder="P35/26" />
             </Field>
             <Field label="Client">
               <TextInput value={d.client} onChange={(e) => setD({ ...d, client: e.target.value })} />

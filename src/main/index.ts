@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, shell } from 'electron'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { autoUpdater } from 'electron-updater'
 import { Storage } from './storage'
-import { exportXlsx } from './exporter'
+import { exportXlsx, exportTimesheets } from './exporter'
+import { SLOTS, todayIndex, weekOf, type Cell, type Timesheet } from '../shared/timesheet'
 import type { Op } from '../shared/ops'
 import type { Collection, Person, Project } from '../shared/types'
 
@@ -13,11 +14,14 @@ interface Config {
   theme: 'system' | 'light' | 'dark'
   /** Whether an AI agent connected over MCP may make changes. */
   agentEdits: boolean
+  /** End-of-day reminder to fill in the timesheet. */
+  reminders: boolean
+  reminderTime: string // "16:30"
 }
 
 const DEFAULT_DIR = 'Z:\\Data\\Shared Files\\Modelart Tracker'
 const configPath = (): string => path.join(app.getPath('userData'), 'config.json')
-let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true }
+let config: Config = { dataDir: '', userId: '', theme: 'system', agentEdits: true, reminders: true, reminderTime: '16:30' }
 let storage: Storage | null = null
 let win: BrowserWindow | null = null
 let online = true
@@ -87,6 +91,18 @@ async function poll(): Promise<void> {
         delete known[key]
         send('removed', { collection: c, id: key.slice(c.length + 1) })
       }
+  }
+  const sm = await storage.sheetMtimes()
+  for (const [key, t] of Object.entries(sm)) {
+    if (known['sheet/' + key] !== t) {
+      known['sheet/' + key] = t
+      const [person, week] = key.split('/')
+      try {
+        send('sheet', await storage.readSheet(person, week))
+      } catch {
+        /* mid-write */
+      }
+    }
   }
   const pm = await storage.peopleMtime()
   if (known['people'] !== pm) {
@@ -208,6 +224,48 @@ function registerIpc(): void {
     await requireStorage().remove(c, id, config.userId)
     delete known[c + '/' + id]
   })
+  ipcMain.handle('sheets:load', async () => {
+    if (!storage || !online) return []
+    const m = await storage.sheetMtimes()
+    const out: Timesheet[] = []
+    for (const [key, t] of Object.entries(m)) {
+      const [person, week] = key.split('/')
+      try {
+        out.push(await storage.readSheet(person, week))
+        known['sheet/' + key] = t
+      } catch {
+        /* unreadable, skip */
+      }
+    }
+    return out
+  })
+  ipcMain.handle('sheets:apply', async (_e, person: string, week: string, cells: Record<string, Cell | null>) => {
+    const s = requireStorage()
+    const t = await s.applySheet(person, week, cells, config.userId)
+    const m = await s.sheetMtimes()
+    if (m[`${person}/${week}`]) known[`sheet/${person}/${week}`] = m[`${person}/${week}`]
+    return t
+  })
+  ipcMain.handle('export:timesheets', async (_e, week: string) => {
+    const s = requireStorage()
+    const people = await s.people()
+    const sheets: Timesheet[] = []
+    for (const p of people) {
+      const t = await s.readSheet(p.id, week)
+      if (Object.keys(t.cells).length) sheets.push(t)
+    }
+    if (!sheets.length) throw new Error('Nobody has time on this week yet.')
+    const projects = (await s.list('projects')).map((x) => x.project)
+    const r = await dialog.showSaveDialog(win!, {
+      title: 'Export timesheets',
+      defaultPath: path.join(app.getPath('documents'), `Timesheets ${week}.xlsx`),
+      filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
+    })
+    if (r.canceled || !r.filePath) return null
+    await exportTimesheets(week, sheets, people, projects, r.filePath)
+    shell.showItemInFolder(r.filePath)
+    return r.filePath
+  })
   ipcMain.handle('data:activity', (_e, projectId: string) => storage?.activity(projectId) ?? [])
   ipcMain.handle('people:save', async (_e, p: Person) => {
     const list = await requireStorage().savePerson(p, config.userId || p.id)
@@ -257,6 +315,44 @@ function setupUpdater(): void {
   autoUpdater.on('error', (e) => send('update', { state: 'error', message: e.message }))
   autoUpdater.checkForUpdates().catch(() => {})
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000)
+}
+
+// ---------- end-of-day timesheet reminder ----------
+let remindedOn = ''
+async function remind(): Promise<void> {
+  if (!config.reminders || !storage || !config.userId) return
+  const now = new Date()
+  const day = todayIndex(now)
+  if (day > 4) return // weekdays only
+  const [h, m] = (config.reminderTime || '16:30').split(':').map(Number)
+  const mins = now.getHours() * 60 + now.getMinutes()
+  // Only around the set time, so opening the app late at night doesn't nag.
+  if (mins < h * 60 + m || mins > h * 60 + m + 120) return
+  const today = now.toDateString()
+  if (remindedOn === today) return
+  remindedOn = today
+  let slots = 0
+  try {
+    const t = await storage.readSheet(config.userId, weekOf(now))
+    for (let s = 0; s < SLOTS; s++) if (t.cells[`${day}:${s}`]) slots++
+  } catch {
+    return
+  }
+  if (slots >= 14 || !Notification.isSupported()) return // 7 hours or more: looks filled in
+  const n = new Notification({
+    title: 'Fill in your timesheet',
+    body: slots ? `You've logged ${slots / 2} hours today. Add the rest before you go.` : "Nothing logged for today yet. Add today's time before you go.",
+    icon: path.join(__dirname, '../../resources/icon.png')
+  })
+  n.on('click', () => {
+    if (!win) return
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
+    send('navigate', { page: 'timesheet' })
+  })
+  n.show()
+  if (process.env.MAT_DEBUG) console.log('[reminder] shown, slots today:', slots)
 }
 
 function createWindow(): void {
@@ -320,6 +416,7 @@ else {
     nativeTheme.on('updated', applyTheme)
     setupUpdater()
     setInterval(() => poll().catch(() => {}), 3000)
+    setInterval(() => remind().catch(() => {}), 30_000)
   })
   app.on('window-all-closed', () => app.quit())
 }

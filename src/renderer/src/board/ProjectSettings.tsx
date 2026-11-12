@@ -50,8 +50,8 @@ export function ProjectSettings({ project, collection, onClose }: { project: Pro
         </div>
         {!template && (
           <>
-            <Field label="Project code">
-              <TextInput value={d.code} onChange={(e) => setD({ ...d, code: e.target.value })} placeholder="P25/26" />
+            <Field label="Job no.">
+              <TextInput value={d.code} onChange={(e) => setD({ ...d, code: e.target.value })} placeholder="P34/26" />
             </Field>
             <Field label="Client">
               <TextInput value={d.client} onChange={(e) => setD({ ...d, client: e.target.value })} />

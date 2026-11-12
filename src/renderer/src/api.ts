@@ -1,11 +1,14 @@
 import type { Op } from '@shared/ops'
 import type { ActivityEntry, Collection, Person, Project } from '@shared/types'
+import type { Cell, Timesheet } from '@shared/timesheet'
 
 export interface AppConfig {
   dataDir: string
   userId: string
   theme: 'system' | 'light' | 'dark'
   agentEdits: boolean
+  reminders: boolean
+  reminderTime: string
   defaultDir: string
   version: string
 }
@@ -32,6 +35,11 @@ interface Api {
   activity(projectId: string): Promise<ActivityEntry[]>
   savePerson(p: Person): Promise<Person[]>
   exportXlsx(projectId: string): Promise<string | null>
+  loadSheets(): Promise<Timesheet[]>
+  applySheet(person: string, week: string, cells: Record<string, Cell | null>): Promise<Timesheet>
+  exportTimesheets(week: string): Promise<string | null>
+  onSheet(cb: (x: Timesheet) => void): () => void
+  onNavigate(cb: (x: { page: string }) => void): () => void
   mcpInfo(): Promise<McpInfo>
   connectClaude(): Promise<boolean>
   checkUpdate(): Promise<UpdateState>

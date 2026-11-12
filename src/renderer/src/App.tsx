@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { CheckSquareOffset, CircleNotch, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
+import { CheckSquareOffset, CircleNotch, Clock, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
 import { allItems, summarize } from '@shared/status'
 import { api } from './api'
 import { useStore, type Route } from './store'
@@ -9,6 +9,7 @@ import { Projects } from './pages/Projects'
 import { MyTasks } from './pages/MyTasks'
 import { Templates } from './pages/Templates'
 import { Settings } from './pages/Settings'
+import { TimesheetPage } from './pages/Timesheet'
 import { Setup } from './pages/Setup'
 import mark from '../../../resources/mark.png'
 
@@ -65,6 +66,8 @@ function Page({ route }: { route: Route }) {
       return <Templates />
     case 'settings':
       return <Settings />
+    case 'timesheet':
+      return <TimesheetPage />
     default:
       return <Projects />
   }
@@ -92,6 +95,7 @@ function TitleBar() {
 function Sidebar() {
   const route = useStore((s) => s.route)
   const go = useStore((s) => s.go)
+  const openTimesheet = useStore((s) => s.openTimesheet)
   const projects = Object.values(useStore((s) => s.docs.projects))
     .filter((p) => p.status === 'active')
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -101,7 +105,7 @@ function Sidebar() {
     const on = route.page === to.page && (to.page !== 'board' || (route.page === 'board' && route.id === (to as { id: string }).id))
     return (
       <button
-        onClick={() => go(to)}
+        onClick={() => (to.page === 'timesheet' ? openTimesheet() : go(to))}
         aria-current={on ? 'page' : undefined}
         className={cx('press flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px]', on ? 'bg-panel font-medium text-ink shadow-sm' : 'text-muted hover:bg-hover hover:text-ink')}
       >
@@ -116,6 +120,7 @@ function Sidebar() {
       <div className="space-y-0.5">
         <Nav to={{ page: 'projects' }} icon={<SquaresFour size={17} />} label="Projects" />
         <Nav to={{ page: 'mine' }} icon={<CheckSquareOffset size={17} />} label="My tasks" />
+        <Nav to={{ page: 'timesheet' }} icon={<Clock size={17} />} label="Timesheet" />
         <Nav to={{ page: 'templates' }} icon={<Stack size={17} />} label="Templates" />
       </div>
 
@@ -179,6 +184,17 @@ function Toasts() {
           style={{ boxShadow: 'var(--shadow)' }}
         >
           {t.text}
+          {t.action && (
+            <button
+              onClick={() => {
+                t.action!.run()
+                useStore.setState({ toasts: useStore.getState().toasts.filter((x) => x.id !== t.id) })
+              }}
+              className="press ml-3 rounded-md px-1.5 py-0.5 font-semibold underline underline-offset-2 hover:no-underline"
+            >
+              {t.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>

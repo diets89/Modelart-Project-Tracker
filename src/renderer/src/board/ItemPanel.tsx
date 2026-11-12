@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Trash, X } from '@phosphor-icons/react'
 import { itemStatus } from '@shared/status'
 import { FLAG_LABELS, type ActivityEntry, type Collection, type Flag, type Project, type StepMark } from '@shared/types'
 import type { Op } from '@shared/ops'
 import { api } from '../api'
 import { useStore } from '../store'
+import { activity, fmtHours } from '@shared/timesheet'
 import { Avatar, Button, IconButton, InlineEdit, PeoplePicker, StatusChip, confirmDelete, cx, fmtWhen } from '../ui'
 
 const MARKS: { id: StepMark | null; label: string }[] = [
@@ -121,6 +122,8 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
           </div>
         </Block>
 
+        {!template && <TimeLogged itemId={item.id} projectId={project.id} />}
+
         <Block title="Quantity">
           <InlineEdit value={item.qty} onCommit={(qty) => update({ qty })} placeholder="e.g. 4" className="w-32 font-mono" />
         </Block>
@@ -189,6 +192,49 @@ export function ItemPanel({ project, collection, itemId }: { project: Project; c
         </div>
       </div>
     </aside>
+  )
+}
+
+/** Hours logged on this item in everyone's timesheets. */
+function TimeLogged({ itemId, projectId }: { itemId: string; projectId: string }) {
+  const sheets = useStore((s) => s.sheets)
+  const people = useStore((s) => s.people)
+  const openTimesheet = useStore((s) => s.openTimesheet)
+  const rows = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const t of Object.values(sheets))
+      for (const c of Object.values(t.cells))
+        if (c.i === itemId) m.set(`${t.person}|${c.a}`, (m.get(`${t.person}|${c.a}`) ?? 0) + 0.5)
+    return [...m.entries()].map(([k, h]) => ({ person: k.split('|')[0], a: k.split('|')[1], h })).sort((a, b) => b.h - a.h)
+  }, [sheets, itemId])
+  const total = rows.reduce((a, r) => a + r.h, 0)
+
+  return (
+    <Block title={`Time logged${total ? `: ${fmtHours(total)}` : ''}`}>
+      {rows.length === 0 ? (
+        <p className="px-2 text-[12.5px] text-faint">
+          No time logged on this item yet.{' '}
+          <button className="press text-ink underline underline-offset-2" onClick={() => openTimesheet({ prefill: { a: 'CM', p: projectId, i: itemId } })}>
+            Log time
+          </button>
+        </p>
+      ) : (
+        <ul className="space-y-1 px-2">
+          {rows.map((r) => {
+            const p = people.find((x) => x.id === r.person)
+            return (
+              <li key={r.person + r.a} className="flex items-center gap-2 text-[12.5px]">
+                <Avatar person={p} size={18} />
+                <span className="min-w-0 flex-1 truncate">
+                  {p?.name ?? r.person} <span className="text-muted">{activity(r.a)?.label ?? r.a}</span>
+                </span>
+                <span className="font-mono">{fmtHours(r.h)}</span>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </Block>
   )
 }
 
