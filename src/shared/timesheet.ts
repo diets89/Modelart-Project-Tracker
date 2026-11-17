@@ -45,8 +45,8 @@ export const SLOTS = 26
  */
 export const OVERTIME_START = -4
 export const OVERTIME_END = 38
-/** Normal work hours, 07:00 to 17:00, as slots. Outside them the grid is shaded. */
-export const WORK_START = 2
+/** Normal work hours, 08:00 to 17:00, as slots. Outside them the grid is shaded. */
+export const WORK_START = 4
 export const WORK_END = 22
 /** True when a sheet has time logged before 06:00 or after 19:00 on any day. */
 export const hasOvertime = (t: { cells: Record<string, unknown> }): boolean =>

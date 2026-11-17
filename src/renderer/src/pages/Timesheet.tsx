@@ -364,7 +364,7 @@ export function TimesheetPage() {
               ))}
             </div>
           </div>
-          <p className="mt-2 text-[12px] text-faint">Drag over the grid to select time, then fill it in on the right. Click a half-hour to change it, double-click to change the whole entry. Shaded rows are outside 07:00 to 17:00; tick Overtime for 04:00 to 01:00. Enter fills, Delete clears.</p>
+          <p className="mt-2 text-[12px] text-faint">Drag over the grid to select time, then fill it in on the right. Click a half-hour to change it, double-click to change the whole entry. Shaded rows are outside 08:00 to 17:00; tick Overtime for 04:00 to 01:00. Enter fills, Delete clears.</p>
         </div>
       </div>
 
@@ -561,7 +561,7 @@ function AddJob({ projects, onDone }: { projects: Project[]; onDone: (t?: { p?: 
   )
 }
 
-/** Shades the grid before 07:00 and from 17:00, so the working day stands out. */
+/** Shades the grid before 08:00 and from 17:00, so the working day stands out. */
 function OffHours({ first, last }: { first: number; last: number }): React.JSX.Element {
   const shade = 'pointer-events-none absolute inset-x-0 bg-[color-mix(in_oklab,var(--line)_45%,transparent)]'
   return (
