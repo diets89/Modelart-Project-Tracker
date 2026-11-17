@@ -28,6 +28,7 @@ Data folder layout: `projects/`, `templates/`, `timesheets/`, `notices/`, `jobs.
 The **Timesheet** tab replaces the weekly Excel timesheets. It's separate from project tracking: time entry never changes a project.
 
 - Same layout as the sheets: 30-minute slots from 06:00 to 19:00, the same activity codes. Drag over the grid, pick the activity, project (job no.) and part of the model, press Fill. Click a half-hour to change just that slot; double-click to pick the whole entry.
+- Rows before 07:00 and from 17:00 are shaded so the working day stands out. Tick **Overtime** (next to Weekend) for early starts and late nights: the day then runs from 04:00 to 01:00. Time after midnight counts on the day the shift started, and a week with overtime logged always shows it.
 - Time is logged against a project's groups (Topography, Model Base, Precinct A...), not single items, which is what the quote comparison will use later. Entries made against items before v0.3.1 count towards that item's group.
 - Jobs without a tracker: choose *+ Add a job number...* in the Project list. They're shared with everyone (`jobs.json`), logged against the job as a whole, and can be renamed or hidden in Settings.
 - General time (Admin General, Lunch/Tea, Out Personal, Out Modelart, Quoting, Studio Maintenance, Side Quest, Studio Improvements) doesn't count against a project.

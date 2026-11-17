@@ -17,6 +17,12 @@ import {
   FULL_DAY,
   streak,
   SLOTS,
+  OVERTIME_END,
+  OVERTIME_START,
+  slotRange,
+  WORK_START,
+  WORK_END,
+  hasOvertime,
   slotTime,
   todayIndex,
   weekNo,
@@ -72,6 +78,7 @@ export function TimesheetPage() {
     return { a: 'CM', ...(top.startsWith('p:') ? { p: top.slice(2) } : top.startsWith('j:') ? { j: top.slice(2) } : {}) }
   })
   const [weekend, setWeekend] = useState(false)
+  const [overtime, setOvertime] = useState(false)
   const drag = useRef<{ d: number; s: number; moved: boolean; whole: boolean } | null>(null)
 
   useEffect(() => {
@@ -81,6 +88,11 @@ export function TimesheetPage() {
 
   const hasWeekend = Object.keys(sheet.cells).some((k) => k.startsWith('5:') || k.startsWith('6:'))
   const days = DAYS.map((_, d) => d).filter((d) => d < 5 || weekend || hasWeekend)
+  const sheetOvertime = hasOvertime(sheet)
+  const [first, last] = slotRange(overtime || sheetOvertime)
+  const rows = last - first
+  /** Pixel offset of a slot from the top of the grid. */
+  const y = (s: number): number => (s - first) * ROW
   const colorOf = (key: string): string => {
     const ids = [...Object.keys(projectsMap).sort().map((id) => 'p:' + id), ...jobs.map((j) => 'j:' + j.id)]
     return PALETTE[Math.max(0, ids.indexOf(key)) % PALETTE.length]
@@ -118,7 +130,7 @@ export function TimesheetPage() {
       toast(n >= 2 ? `${DAYS[nowFull[0]]} is filled in. ${n} days in a row!` : `${DAYS[nowFull[0]]} is filled in. Nice one.`)
     }
     // Move on to the slot after the selection, ready for the next entry.
-    if (sel.d0 === sel.d1 && sel.s1 + 1 < SLOTS) setSel({ d0: sel.d0, d1: sel.d0, s0: sel.s1 + 1, s1: sel.s1 + 1 })
+    if (sel.d0 === sel.d1 && sel.s1 + 1 < last) setSel({ d0: sel.d0, d1: sel.d0, s0: sel.s1 + 1, s1: sel.s1 + 1 })
     else setSel(null)
   }
   const clear = (): void => {
@@ -147,8 +159,8 @@ export function TimesheetPage() {
 
   // ---------- selecting with the mouse ----------
   const slotAt = (e: React.MouseEvent, el: HTMLElement): number => {
-    const y = e.clientY - el.getBoundingClientRect().top
-    return Math.max(0, Math.min(SLOTS - 1, Math.floor(y / ROW)))
+    const top = e.clientY - el.getBoundingClientRect().top
+    return Math.max(first, Math.min(last - 1, first + Math.floor(top / ROW)))
   }
   const onDown = (d: number) => (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
@@ -175,8 +187,8 @@ export function TimesheetPage() {
       if (!g.whole) return
       let s0 = g.s
       let s1 = g.s
-      while (s0 > 0 && same(sheet.cells[cellKey(g.d, s0 - 1)], c)) s0--
-      while (s1 < SLOTS - 1 && same(sheet.cells[cellKey(g.d, s1 + 1)], c)) s1++
+      while (s0 > OVERTIME_START && same(sheet.cells[cellKey(g.d, s0 - 1)], c)) s0--
+      while (s1 < OVERTIME_END - 1 && same(sheet.cells[cellKey(g.d, s1 + 1)], c)) s1++
       setSel({ d0: g.d, d1: g.d, s0, s1 })
     }
     window.addEventListener('mouseup', up)
@@ -186,7 +198,7 @@ export function TimesheetPage() {
   // ---------- blocks: runs of identical slots ----------
   const blocks = (d: number): { s0: number; s1: number; c: Cell }[] => {
     const out: { s0: number; s1: number; c: Cell }[] = []
-    for (let s = 0; s < SLOTS; s++) {
+    for (let s = first; s < last; s++) {
       const c = sheet.cells[cellKey(d, s)]
       if (!c) continue
       const last = out[out.length - 1]
@@ -256,6 +268,10 @@ export function TimesheetPage() {
             <input type="checkbox" checked={weekend || hasWeekend} disabled={hasWeekend} onChange={(e) => setWeekend(e.target.checked)} className="accent-[var(--accent)]" />
             Weekend
           </label>
+          <label className="flex items-center gap-1.5 text-[13px] text-muted" title="Show early mornings and evenings, 04:00 to 01:00">
+            <input type="checkbox" checked={overtime || sheetOvertime} disabled={sheetOvertime} onChange={(e) => setOvertime(e.target.checked)} className="accent-[var(--accent)]" />
+            Overtime
+          </label>
           <Button icon={<FileXls size={15} />} onClick={exportWeek}>
             Export
           </Button>
@@ -284,10 +300,11 @@ export function TimesheetPage() {
               ))}
             </div>
             <div className="grid" style={{ gridTemplateColumns: `56px repeat(${days.length}, minmax(0, 1fr))` }}>
-              <div className="relative" style={{ height: SLOTS * ROW }}>
-                {Array.from({ length: SLOTS / 2 + 1 }, (_, h) => (
+              <div className="relative" style={{ height: rows * ROW }}>
+                <OffHours first={first} last={last} />
+                {Array.from({ length: rows / 2 + 1 }, (_, h) => (
                   <span key={h} className="absolute right-2 -translate-y-1/2 font-mono text-[10.5px] text-faint" style={{ top: h * 2 * ROW }}>
-                    {h > 0 && h < SLOTS / 2 ? slotTime(h * 2) : ''}
+                    {h > 0 && h < rows / 2 ? slotTime(first + h * 2) : ''}
                   </span>
                 ))}
               </div>
@@ -298,17 +315,18 @@ export function TimesheetPage() {
                   onMouseMove={onMove(d)}
                   className={cx('relative cursor-cell border-l border-line', d === today && 'bg-accent-soft/20')}
                   style={{
-                    height: SLOTS * ROW,
+                    height: rows * ROW,
                     backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${ROW * 2 - 1}px, var(--line) ${ROW * 2 - 1}px, var(--line) ${ROW * 2}px), repeating-linear-gradient(to bottom, transparent 0, transparent ${ROW - 1}px, color-mix(in oklab, var(--line) 45%, transparent) ${ROW - 1}px, color-mix(in oklab, var(--line) 45%, transparent) ${ROW}px)`
                   }}
                 >
+                  <OffHours first={first} last={last} />
                   {blocks(d).map((b) => {
                     const act = activity(b.c.a)
                     const p = b.c.p ? projectsMap[b.c.p] : undefined
                     const grp = groupOf(p, cellGroup(p, b.c))
                     const job = b.c.j ? jobs.find((x) => x.id === b.c.j) : undefined
                     const color = colorOf(targetKey(b.c))
-                    const rows = b.s1 - b.s0 + 1
+                    const len = b.s1 - b.s0 + 1
                     const capt = b.c.by ? people.find((x) => x.id === b.c.by)?.name : undefined
                     return (
                       <div
@@ -316,8 +334,8 @@ export function TimesheetPage() {
                         title={[`${slotTime(b.s0)}-${slotTime(b.s1 + 1)}`, `${b.c.a} ${act?.label ?? ''}`, p && `${p.code} ${p.name}`, job && `${job.code} ${job.name}`, grp && (grp.name === grp.section ? grp.name : `${grp.section} / ${grp.name}`), capt && `Captured by ${capt}`].filter(Boolean).join('\n')}
                         className={cx('pointer-events-none absolute inset-x-1 overflow-hidden rounded-md px-1.5 text-[11.5px] leading-[20px]', act?.general ? 'bg-sunken text-muted' : 'text-ink')}
                         style={{
-                          top: b.s0 * ROW + 1,
-                          height: rows * ROW - 2,
+                          top: y(b.s0) + 1,
+                          height: len * ROW - 2,
                           ...(act?.general
                             ? { boxShadow: 'inset 3px 0 0 var(--line-strong)' }
                             : { background: `color-mix(in oklab, ${color} 13%, var(--panel))`, boxShadow: `inset 3px 0 0 ${color}` })
@@ -326,9 +344,9 @@ export function TimesheetPage() {
                         <div className="truncate pl-1">
                           <b className="font-mono font-semibold">{b.c.a}</b> {act?.general ? act.label : (grp?.name ?? p?.name ?? (job ? job.name || job.code : ''))}
                         </div>
-                        {rows > 1 && (
+                        {len > 1 && (
                           <div className="truncate pl-1 text-muted">
-                            {fmtHours(rows / 2)}
+                            {fmtHours(len / 2)}
                             {!act?.general && p ? ` · ${p.code || p.name}` : ''}
                             {!act?.general && job ? ` · ${job.code}` : ''}
                           </div>
@@ -339,14 +357,14 @@ export function TimesheetPage() {
                   {sel && d >= sel.d0 && d <= sel.d1 && (
                     <div
                       className="pointer-events-none absolute inset-x-0.5 rounded-md border-2 border-accent bg-accent/10"
-                      style={{ top: sel.s0 * ROW, height: (sel.s1 - sel.s0 + 1) * ROW }}
+                      style={{ top: y(sel.s0), height: (sel.s1 - sel.s0 + 1) * ROW }}
                     />
                   )}
                 </div>
               ))}
             </div>
           </div>
-          <p className="mt-2 text-[12px] text-faint">Drag over the grid to select time, then fill it in on the right. Click a half-hour to change it, double-click to change the whole entry. Enter fills, Delete clears.</p>
+          <p className="mt-2 text-[12px] text-faint">Drag over the grid to select time, then fill it in on the right. Click a half-hour to change it, double-click to change the whole entry. Shaded rows are outside 07:00 to 17:00; tick Overtime for 04:00 to 01:00. Enter fills, Delete clears.</p>
         </div>
       </div>
 
@@ -540,6 +558,17 @@ function AddJob({ projects, onDone }: { projects: Project[]; onDone: (t?: { p?: 
         </Button>
       </div>
     </form>
+  )
+}
+
+/** Shades the grid before 07:00 and from 17:00, so the working day stands out. */
+function OffHours({ first, last }: { first: number; last: number }): React.JSX.Element {
+  const shade = 'pointer-events-none absolute inset-x-0 bg-[color-mix(in_oklab,var(--line)_45%,transparent)]'
+  return (
+    <>
+      <div aria-hidden className={shade} style={{ top: 0, height: (WORK_START - first) * ROW }} />
+      <div aria-hidden className={shade} style={{ top: (WORK_END - first) * ROW, height: (last - WORK_END) * ROW }} />
+    </>
   )
 }
 

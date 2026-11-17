@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Storage } from '../src/main/storage'
-import { activity, addWeeks, dayDate, weekOf, weekStart } from '../src/shared/timesheet'
+import { activity, addWeeks, dayDate, hasOvertime, OVERTIME_END, OVERTIME_START, slotTime, weekOf, weekStart } from '../src/shared/timesheet'
 
 describe('weeks', () => {
   it('matches the Excel timesheet numbering', () => {
@@ -65,5 +65,20 @@ describe('activities', () => {
     for (const code of ['QT', 'AG', 'SM', 'SQ', 'SI', 'OM', 'OP', 'L/T']) expect(activity(code)?.general).toBe(true)
     expect(activity('SQ')?.label).toBe('Side Quest')
     expect(activity('CM')?.general).toBe(false)
+  })
+})
+
+describe('overtime', () => {
+  it('runs the day from 04:00 on past midnight to 01:00', () => {
+    expect(slotTime(0)).toBe('06:00')
+    expect(slotTime(26)).toBe('19:00')
+    expect(slotTime(36)).toBe('00:00')
+    expect(slotTime(OVERTIME_END)).toBe('01:00')
+    expect(slotTime(OVERTIME_START)).toBe('04:00')
+  })
+  it('spots a sheet with time before 06:00 or after 19:00', () => {
+    expect(hasOvertime({ cells: { '0:25': {} } })).toBe(false)
+    expect(hasOvertime({ cells: { '0:25': {}, '2:30': {} } })).toBe(true)
+    expect(hasOvertime({ cells: { '1:-2': {} } })).toBe(true)
   })
 })

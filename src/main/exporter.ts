@@ -1,7 +1,7 @@
 import ExcelJS from 'exceljs'
 import { itemStatus, summarize, allItems } from '../shared/status'
 import { FLAG_LABELS, type Job, type Person, type Project } from '../shared/types'
-import { activity, cellGroup, DAYS, dayDate, groupOf, SLOTS, slotTime, weekNo, type Timesheet } from '../shared/timesheet'
+import { activity, cellGroup, DAYS, dayDate, groupOf, hasOvertime, slotRange, slotTime, weekNo, type Timesheet } from '../shared/timesheet'
 
 const DONE = 'FF92D050' // the same green the team uses in the sheet
 const STARTED = 'FFE2F0CB'
@@ -144,8 +144,10 @@ export async function exportTimesheets(week: string, sheets: Timesheet[], people
     ws.getCell(4, 1).value = 'Time'
     ws.getCell(4, 1).font = { bold: true, size: 9 }
     ws.getColumn(1).width = 12
-    for (let s = 0; s < SLOTS; s++) {
-      const row = ws.getRow(5 + s)
+    const [first, last] = slotRange(hasOvertime(t))
+    const rows = last - first
+    for (let s = first; s < last; s++) {
+      const row = ws.getRow(5 + s - first)
       row.getCell(1).value = `${slotTime(s)} - ${slotTime(s + 1)}`
       days.forEach((d, n) => {
         const c = t.cells[`${d}:${s}`]
@@ -159,7 +161,7 @@ export async function exportTimesheets(week: string, sheets: Timesheet[], people
         for (let k = 0; k < 3; k++) row.getCell(col + k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } }
       })
     }
-    const tr = ws.getRow(6 + SLOTS)
+    const tr = ws.getRow(6 + rows)
     tr.getCell(1).value = 'Hours'
     tr.font = { bold: true }
     days.forEach((d, n) => {

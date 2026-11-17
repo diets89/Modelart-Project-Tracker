@@ -5,7 +5,7 @@ import { autoUpdater } from 'electron-updater'
 import { Storage } from './storage'
 import { exportXlsx, exportTimesheets } from './exporter'
 import { cleanPath } from '../shared/paths'
-import { SLOTS, todayIndex, weekOf, type Cell, type Timesheet } from '../shared/timesheet'
+import { OVERTIME_END, OVERTIME_START, todayIndex, weekOf, type Cell, type Timesheet } from '../shared/timesheet'
 import type { Op } from '../shared/ops'
 import type { Collection, Job, Notice, Person, Project } from '../shared/types'
 
@@ -496,7 +496,7 @@ async function remind(): Promise<void> {
   let slots = 0
   try {
     const t = await storage.readSheet(config.userId, weekOf(now))
-    for (let s = 0; s < SLOTS; s++) if (t.cells[`${day}:${s}`]) slots++
+    for (let s = OVERTIME_START; s < OVERTIME_END; s++) if (t.cells[`${day}:${s}`]) slots++
   } catch {
     return
   }

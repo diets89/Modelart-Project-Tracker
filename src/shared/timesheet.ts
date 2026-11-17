@@ -35,9 +35,28 @@ export const ACTIVITIES: Activity[] = [
 
 export const activity = (code: string): Activity | undefined => ACTIVITIES.find((a) => a.code === code)
 
-/** Day starts 06:00, ends 19:00, in 30-minute slots. */
+/** Day starts 06:00 and the normal grid ends 19:00, in 30-minute slots. */
 export const FIRST_HOUR = 6
 export const SLOTS = 26
+/**
+ * With overtime on, the day starts at 04:00 and runs on to 01:00. Early slots are negative
+ * (-4 = 04:00) so entries made on the normal grid keep their keys. Time after midnight
+ * belongs to the day the shift started.
+ */
+export const OVERTIME_START = -4
+export const OVERTIME_END = 38
+/** Normal work hours, 07:00 to 17:00, as slots. Outside them the grid is shaded. */
+export const WORK_START = 2
+export const WORK_END = 22
+/** True when a sheet has time logged before 06:00 or after 19:00 on any day. */
+export const hasOvertime = (t: { cells: Record<string, unknown> }): boolean =>
+  Object.keys(t.cells).some((k) => {
+    const s = Number(k.split(':')[1])
+    return s < 0 || s >= SLOTS
+  })
+
+/** First slot and the slot after the last one shown on the grid. */
+export const slotRange = (overtime: boolean): [number, number] => (overtime ? [OVERTIME_START, OVERTIME_END] : [0, SLOTS])
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 export interface Cell {
@@ -68,7 +87,7 @@ export const cellKey = (day: number, slot: number): string => `${day}:${slot}`
 
 export function slotTime(slot: number): string {
   const m = FIRST_HOUR * 60 + slot * 30
-  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${m % 60 ? '30' : '00'}`
+  return `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${m % 60 ? '30' : '00'}`
 }
 
 export function emptySheet(person: string, week: string): Timesheet {
