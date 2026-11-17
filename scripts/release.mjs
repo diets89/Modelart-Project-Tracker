@@ -34,4 +34,4 @@ run(
   `gh release create v${version} "${exe}" "${exe}.blockmap" dist/latest.yml -R ${repo.owner}/${repo.repo} ` +
     `--title "v${version}" --notes "${(notes ?? 'Updates and fixes.').replace(/"/g, "'")}"`
 )
-console.log(`\nPublished v${version}. Installed copies pick it up when they start, or within 4 hours.`)
+console.log(`\nPublished v${version}. Installed copies pick it up when they start, or within 30 minutes.`)

@@ -476,7 +476,8 @@ function setupUpdater(): void {
   autoUpdater.on('update-downloaded', (i) => send('update', { state: 'ready', version: i.version }))
   autoUpdater.on('error', (e) => send('update', { state: 'error', message: e.message }))
   autoUpdater.checkForUpdates().catch(() => {})
-  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000)
+  // Every 30 minutes, so a new release reaches every PC the same afternoon.
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 30 * 60 * 1000)
 }
 
 // ---------- end-of-day timesheet reminder ----------

@@ -92,7 +92,7 @@ npm run typecheck
 npm run release -- patch
 ```
 
-This bumps the version, builds the installer, publishes it to GitHub Releases and pushes the tag. Installed copies download it in the background and offer "Restart to update".
+This bumps the version, builds the installer, publishes it to GitHub Releases and pushes the tag. Installed copies check when they start and every 30 minutes, download it in the background and offer "Restart to update".
 
 ## Importing an old breakdown spreadsheet
 
