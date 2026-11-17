@@ -26,6 +26,7 @@ export const ACTIVITIES: Activity[] = [
   { code: 'QT', label: 'Quoting', general: true },
   { code: 'AG', label: 'Admin General', general: true },
   { code: 'SM', label: 'Studio Maintenance', general: true },
+  { code: 'SQ', label: 'Side Quest', general: true },
   { code: 'OM', label: 'Out Modelart', general: true },
   { code: 'OP', label: 'Out Personal', general: true },
   { code: 'L/T', label: 'Lunch / Tea Time', general: true }

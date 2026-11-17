@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { Storage } from '../src/main/storage'
-import { addWeeks, dayDate, weekOf, weekStart } from '../src/shared/timesheet'
+import { activity, addWeeks, dayDate, weekOf, weekStart } from '../src/shared/timesheet'
 
 describe('weeks', () => {
   it('matches the Excel timesheet numbering', () => {
@@ -57,5 +57,13 @@ describe('timesheet storage', () => {
     const s = new Storage(root)
     await expect(s.applySheet('../x', '2026-W46', {}, 'diets')).rejects.toThrow()
     await expect(s.applySheet('diets', '2026-46', {}, 'diets')).rejects.toThrow()
+  })
+})
+
+describe('activities', () => {
+  it('treats general time, side quests included, as not against a project', () => {
+    for (const code of ['QT', 'AG', 'SM', 'SQ', 'OM', 'OP', 'L/T']) expect(activity(code)?.general).toBe(true)
+    expect(activity('SQ')?.label).toBe('Side Quest')
+    expect(activity('CM')?.general).toBe(false)
   })
 })

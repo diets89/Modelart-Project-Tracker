@@ -30,7 +30,7 @@ The **Timesheet** tab replaces the weekly Excel timesheets. It's separate from p
 - Same layout as the sheets: 30-minute slots from 06:00 to 19:00, the same activity codes. Drag over the grid, pick the activity, project (job no.) and part of the model, press Fill.
 - Time is logged against a project's groups (Topography, Model Base, Precinct A...), not single items, which is what the quote comparison will use later. Entries made against items before v0.3.1 count towards that item's group.
 - Jobs without a tracker: choose *+ Add a job number...* in the Project list. They're shared with everyone (`jobs.json`), logged against the job as a whole, and can be renamed or hidden in Settings.
-- General time (Admin General, Lunch/Tea, Out Personal, Out Modelart, Quoting, Studio Maintenance) doesn't count against a project.
+- General time (Admin General, Lunch/Tea, Out Personal, Out Modelart, Quoting, Studio Maintenance, Side Quest) doesn't count against a project.
 - Anyone can fill in someone else's sheet (for the team on paper timesheets). Those entries note who captured them.
 - Ticking a step **done** with no matching time on that item's group shows a reminder with a *Log time* button. Drawing matches CM and CM Art; Machining matches Mch and Pnt; Assembly matches MBC, P/F, P/L and LI; Install matches FPM.
 - Weekday reminder at 16:30 (Settings > Timesheet reminder) if less than 7 hours are logged for the day. It only shows while the app is open.
