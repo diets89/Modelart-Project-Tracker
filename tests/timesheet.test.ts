@@ -62,7 +62,7 @@ describe('timesheet storage', () => {
 
 describe('activities', () => {
   it('treats general time, side quests included, as not against a project', () => {
-    for (const code of ['QT', 'AG', 'SM', 'SQ', 'OM', 'OP', 'L/T']) expect(activity(code)?.general).toBe(true)
+    for (const code of ['QT', 'AG', 'SM', 'SQ', 'SI', 'OM', 'OP', 'L/T']) expect(activity(code)?.general).toBe(true)
     expect(activity('SQ')?.label).toBe('Side Quest')
     expect(activity('CM')?.general).toBe(false)
   })
