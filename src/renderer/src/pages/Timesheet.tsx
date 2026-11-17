@@ -72,7 +72,7 @@ export function TimesheetPage() {
     return { a: 'CM', ...(top.startsWith('p:') ? { p: top.slice(2) } : top.startsWith('j:') ? { j: top.slice(2) } : {}) }
   })
   const [weekend, setWeekend] = useState(false)
-  const drag = useRef<{ d: number; s: number; moved: boolean } | null>(null)
+  const drag = useRef<{ d: number; s: number; moved: boolean; whole: boolean } | null>(null)
 
   useEffect(() => {
     if (prefill) setDraft(prefill)
@@ -154,7 +154,7 @@ export function TimesheetPage() {
     if (e.button !== 0) return
     e.preventDefault()
     const s = slotAt(e, e.currentTarget)
-    drag.current = { d, s, moved: false }
+    drag.current = { d, s, moved: false, whole: e.detail >= 2 }
     setSel({ d0: d, d1: d, s0: s, s1: s })
   }
   const onMove = (d: number) => (e: React.MouseEvent<HTMLDivElement>) => {
@@ -168,15 +168,16 @@ export function TimesheetPage() {
       const g = drag.current
       drag.current = null
       if (!g || g.moved) return
-      // A plain click on an entry selects the whole entry and loads it for editing.
+      // A click picks that half-hour and loads it for editing; a double-click picks the whole entry.
       const c = sheet.cells[cellKey(g.d, g.s)]
       if (!c) return
+      setDraft({ a: c.a, p: c.p, g: cellGroup(c.p ? projectsMap[c.p] : undefined, c), j: c.j })
+      if (!g.whole) return
       let s0 = g.s
       let s1 = g.s
       while (s0 > 0 && same(sheet.cells[cellKey(g.d, s0 - 1)], c)) s0--
       while (s1 < SLOTS - 1 && same(sheet.cells[cellKey(g.d, s1 + 1)], c)) s1++
       setSel({ d0: g.d, d1: g.d, s0, s1 })
-      setDraft({ a: c.a, p: c.p, g: cellGroup(c.p ? projectsMap[c.p] : undefined, c), j: c.j })
     }
     window.addEventListener('mouseup', up)
     return () => window.removeEventListener('mouseup', up)
@@ -345,7 +346,7 @@ export function TimesheetPage() {
               ))}
             </div>
           </div>
-          <p className="mt-2 text-[12px] text-faint">Drag over the grid to select time, then fill it in on the right. Click an entry to change it. Enter fills, Delete clears.</p>
+          <p className="mt-2 text-[12px] text-faint">Drag over the grid to select time, then fill it in on the right. Click a half-hour to change it, double-click to change the whole entry. Enter fills, Delete clears.</p>
         </div>
       </div>
 
