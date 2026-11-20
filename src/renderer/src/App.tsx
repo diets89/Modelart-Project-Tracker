@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { CheckSquareOffset, CircleNotch, Clock, Confetti, PushPin, X, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
+import { useEffect, useState } from 'react'
+import { CaretDown, CaretRight, CheckSquareOffset, CircleNotch, Clock, Confetti, PushPin, X, CloudSlash, GearSix, SquaresFour, Stack, WarningCircle } from '@phosphor-icons/react'
 import { allItems, summarize } from '@shared/status'
 import { streak } from '@shared/timesheet'
 import { api } from './api'
@@ -98,6 +98,24 @@ function TitleBar() {
   )
 }
 
+// Per-PC sidebar preference: is the Completed section open?
+const COMPLETED_KEY = 'mat.sidebar.completedOpen'
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
+function writeFlag(key: string, value: boolean): void {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    /* storage unavailable: the choice just isn't remembered */
+  }
+}
+
 function Sidebar() {
   const route = useStore((s) => s.route)
   const go = useStore((s) => s.go)
@@ -105,6 +123,16 @@ function Sidebar() {
   const projects = Object.values(useStore((s) => s.docs.projects))
     .filter((p) => p.status === 'active')
     .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => ({ p, sum: summarize(allItems(p), p.steps) }))
+  // Finished = every item done. Those move to their own Completed section below.
+  const isDone = (x: { sum: { total: number; done: number } }) => x.sum.total > 0 && x.sum.done === x.sum.total
+  const active = projects.filter((x) => !isDone(x))
+  const completed = projects.filter(isDone)
+  const [showCompleted, setShowCompleted] = useState(() => readFlag(COMPLETED_KEY, true))
+  const toggleCompleted = () => {
+    setShowCompleted(!showCompleted)
+    writeFlag(COMPLETED_KEY, !showCompleted)
+  }
   const me = useStore((s) => s.people.find((p) => p.id === s.config?.userId))
   const sheets = useStore((s) => s.sheets)
   const days = me ? streak(sheets, me.id) : 0
@@ -122,6 +150,25 @@ function Sidebar() {
         {icon}
         <span className="truncate">{label}</span>
         {extra && <span className="ml-auto">{extra}</span>}
+      </button>
+    )
+  }
+
+  const row = ({ p, sum }: { p: (typeof projects)[number]['p']; sum: (typeof projects)[number]['sum'] }) => {
+    const on = route.page === 'board' && route.id === p.id
+    return (
+      <button
+        key={p.id}
+        onClick={() => go({ page: 'board', collection: 'projects', id: p.id })}
+        className={cx('press flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px]', on ? 'bg-panel font-medium shadow-sm' : 'text-muted hover:bg-hover hover:text-ink')}
+      >
+        <ProgressRing value={sum.progress} />
+        <span className="min-w-0 flex-1 truncate">{p.name}</span>
+        {sum.waiting + sum.hold > 0 && (
+          <span title={`${sum.waiting + sum.hold} waiting or on hold`} className="flex items-center text-wait">
+            <WarningCircle size={14} />
+          </span>
+        )}
       </button>
     )
   }
@@ -150,28 +197,27 @@ function Sidebar() {
         <Nav to={{ page: 'templates' }} icon={<Stack size={17} />} label="Templates" />
       </div>
 
-      <div className="mt-6 mb-1.5 px-2.5 text-[11.5px] font-medium text-faint">Active projects</div>
-      <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
-        {projects.length === 0 && <p className="px-2.5 text-[12.5px] text-faint">None yet</p>}
-        {projects.map((p) => {
-          const sum = summarize(allItems(p), p.steps)
-          const on = route.page === 'board' && route.id === p.id
-          return (
+      <div className="mt-6 min-h-0 flex-1 overflow-y-auto">
+        <div className="mb-1.5 px-2.5 text-[11.5px] font-medium text-faint">Active projects</div>
+        <div className="space-y-0.5">
+          {active.length === 0 && <p className="px-2.5 text-[12.5px] text-faint">{completed.length ? 'All finished' : 'None yet'}</p>}
+          {active.map(row)}
+        </div>
+
+        {completed.length > 0 && (
+          <>
             <button
-              key={p.id}
-              onClick={() => go({ page: 'board', collection: 'projects', id: p.id })}
-              className={cx('press flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px]', on ? 'bg-panel font-medium shadow-sm' : 'text-muted hover:bg-hover hover:text-ink')}
+              onClick={toggleCompleted}
+              aria-expanded={showCompleted}
+              className="press mt-4 mb-1.5 flex w-full items-center gap-1.5 rounded-md px-2.5 py-0.5 text-left text-[11.5px] font-medium text-faint hover:text-ink"
             >
-              <ProgressRing value={sum.progress} />
-              <span className="min-w-0 flex-1 truncate">{p.name}</span>
-              {sum.waiting + sum.hold > 0 && (
-                <span title={`${sum.waiting + sum.hold} waiting or on hold`} className="flex items-center text-wait">
-                  <WarningCircle size={14} />
-                </span>
-              )}
+              {showCompleted ? <CaretDown size={11} weight="bold" /> : <CaretRight size={11} weight="bold" />}
+              Completed
+              <span className="ml-auto font-mono text-[11px]">{completed.length}</span>
             </button>
-          )
-        })}
+            {showCompleted && <div className="space-y-0.5">{completed.map(row)}</div>}
+          </>
+        )}
       </div>
 
       <div className="mt-3 space-y-0.5 border-t border-line pt-3">
